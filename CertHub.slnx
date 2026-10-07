@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/lab/" />
+  <Folder Name="/lab/services/">
+    <Project Path="lab/services/CertHub.Lab.Server/CertHub.Lab.Server.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/CertHub.Api/CertHub.Api.csproj" />
+    <Project Path="src/CertHub.Application/CertHub.Application.csproj" />
+    <Project Path="src/CertHub.Domain/CertHub.Domain.csproj" />
+    <Project Path="src/CertHub.Infrastructure/CertHub.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CertHub.Application.Tests/CertHub.Application.Tests.csproj" />
+    <Project Path="tests/CertHub.Domain.Tests/CertHub.Domain.Tests.csproj" />
+    <Project Path="tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj" />
+  </Folder>
+</Solution>
