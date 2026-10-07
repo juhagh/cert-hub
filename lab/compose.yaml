@@ -1,0 +1,17 @@
+services:
+  tls-server:
+    image: certhub-lab-server:dev
+    build:
+      context: ..
+      dockerfile: lab/services/CertHub.Lab.Server/Dockerfile
+    environment:
+      Kestrel__Endpoints__Https__Certificate__Password: ${CERTHUB_LAB_PFX_PASSWORD:?Set the lab PFX password}
+    ports:
+      - "127.0.0.1:8443:8443"
+    volumes:
+      - type: bind
+        source: ./certificates/generated/localhost.pfx
+        target: /certificates/localhost.pfx
+        bind:
+          create_host_path: false
+        read_only: true
