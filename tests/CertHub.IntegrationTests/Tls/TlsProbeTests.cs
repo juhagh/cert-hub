@@ -57,4 +57,28 @@ public sealed class TlsProbeTests
         
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sut.ProbeAsync(request, cts.Token));
     }
+
+    [Fact]
+    public async Task ProbeAsync_WhenCancelledDuringTlsAuthentication_ThrowsOperationCanceledException()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(30),
+            TrustMode = TrustMode.System
+        };
+
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options);
+
+        await using StallingTlsTestServer testServer = new StallingTlsTestServer();
+        var request = new TlsProbeRequest("localhost", testServer.Port);
+        using var cts = new CancellationTokenSource();
+        
+        var probeTask = sut.ProbeAsync(request, cts.Token);
+        await testServer.ClientHelloReceived.WaitAsync(TimeSpan.FromSeconds(5));
+        
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probeTask.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
 }

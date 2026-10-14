@@ -41,7 +41,6 @@ public sealed class TlsTestServer : IAsyncDisposable
             _certificate.Dispose();
             _shutdownCts.Dispose();
         }
-        
     }
 
     private static X509Certificate2 CreateServerCertificate()
