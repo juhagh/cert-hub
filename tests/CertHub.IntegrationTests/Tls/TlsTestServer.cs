@@ -15,15 +15,17 @@ public sealed class TlsTestServer : IAsyncDisposable
     
     public int Port { get; }
 
-    public TlsTestServer(X509Certificate2? issuer = null)
+    public TlsTestServer(
+        X509Certificate2? issuer = null, 
+        string certificateHostname = "localhost")
     {
         if (issuer is null)
         {
-            _certificate = CreateServerCertificate();    
+            _certificate = CreateServerCertificate(certificateHostname);    
         }
         else
         {
-            _certificate = CreateIssuedServerCertificate(issuer);
+            _certificate = CreateIssuedServerCertificate(certificateHostname, issuer);
         }
         
         _listener = new TcpListener(localaddr: IPAddress.Loopback, port: 0);
@@ -51,19 +53,19 @@ public sealed class TlsTestServer : IAsyncDisposable
         }
     }
 
-    private static X509Certificate2 CreateServerCertificate()
+    private static X509Certificate2 CreateServerCertificate(string certificateHostname)
     {
         //Generate a public/private key pair.
         using RSA rsa = RSA.Create(2048);
 
         CertificateRequest request = new CertificateRequest(
-            subjectName: "CN=localhost",
+            subjectName: $"CN={certificateHostname}",
             key: rsa,
             hashAlgorithm: HashAlgorithmName.SHA256,
             padding: RSASignaturePadding.Pkcs1);
 
         SubjectAlternativeNameBuilder sanBuilder = new SubjectAlternativeNameBuilder();
-        sanBuilder.AddDnsName("localhost");
+        sanBuilder.AddDnsName(certificateHostname);
         var extension = sanBuilder.Build();
 
         request.CertificateExtensions.Add(extension);
@@ -130,19 +132,19 @@ public sealed class TlsTestServer : IAsyncDisposable
             notAfter: now.AddDays(1));
     }
 
-    private static X509Certificate2 CreateIssuedServerCertificate(X509Certificate2 issuer)
+    private static X509Certificate2 CreateIssuedServerCertificate(string certificateHostname, X509Certificate2 issuer)
     {
         //Generate a public/private key pair.
         using RSA rsa = RSA.Create(2048);
 
         CertificateRequest request = new CertificateRequest(
-            subjectName: "CN=localhost",
+            subjectName: $"CN={certificateHostname}",
             key: rsa,
             hashAlgorithm: HashAlgorithmName.SHA256,
             padding: RSASignaturePadding.Pkcs1);
 
         SubjectAlternativeNameBuilder sanBuilder = new SubjectAlternativeNameBuilder();
-        sanBuilder.AddDnsName("localhost");
+        sanBuilder.AddDnsName(certificateHostname);
         var extension = sanBuilder.Build();
 
         request.CertificateExtensions.Add(extension);
