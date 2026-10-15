@@ -11,14 +11,14 @@ Active development. The core TLS probe is implemented and exercised through inte
 The probe currently supports:
 
 - DNS resolution and sequential TCP connection attempts across resolved addresses.
-- Server TLS authentication with certificate validation enforced against system trust.
+- Server TLS authentication with certificate validation enforced against system trust or explicitly configured custom roots.
 - Diagnostic reports distinguishing DNS, TCP, TLS authentication and certificate-validation outcomes.
 - Certificate subject, issuer, validity dates and SHA-256 fingerprint capture, including when validation rejects the certificate.
 - Hostname and certificate-chain validation findings, with supporting platform error details.
 - Connected IP address, TCP-stage duration and negotiated TLS protocol and cipher suite when authentication succeeds.
 - A shared diagnostic timeout and propagation of caller cancellation.
 
-Custom-root trust is planned but is not currently supported. Revocation checking and automatic downloads of missing issuer certificates are disabled for this initial milestone. The probe sends no HTTP request or other application data to the target.
+Revocation checking and automatic downloads of missing issuer certificates are disabled for this initial milestone. The probe sends no HTTP request or other application data to the target.
 
 ## Tests
 
@@ -28,10 +28,11 @@ Self-contained integration tests currently cover:
 - Cancellation before a diagnostic attempt starts.
 - Caller cancellation during an active TLS authentication attempt.
 - Timeout reporting when the shared diagnostic budget expires during TLS authentication. 
+- Successful TLS authentication using a configured custom root CA.
 
 Tests use in-process loopback servers, dynamically assigned ports and temporary certificates. They do not require Docker, externally hosted services or changes to the machine's trust store.
 
-Successful authentication and other failure paths also need dedicated verification.
+Additional DNS, TCP and TLS failure paths need dedicated verification.
 
 ## Build and Test
 
@@ -78,7 +79,6 @@ Design documentation:
 ## Next Steps
 
 - Expand DNS, TCP and TLS failure-path coverage.
-- Add custom-root trust and test successful TLS authentication against controlled certificates.
 - Expose the diagnostic use case through an HTTP endpoint with request validation and target restrictions.
 - Automate build and test checks in GitHub Actions.
 

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using CertHub.Application.Diagnostics;
 using CertHub.Domain.Diagnostics;
 using CertHub.Infrastructure.Tls;
@@ -114,5 +115,66 @@ public sealed class TlsProbeTests
         Assert.Null(result.Connection.TlsProtocol);
         Assert.Null(result.Connection.CipherSuite);
         Assert.Contains(result.Findings, f => f.Code == "TLS_TIMEOUT");
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WithConfiguredCustomRoot_ReturnsSuccessfulAuthentication()
+    { 
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+
+        var certificateFile = Path.GetTempFileName();
+
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(certificateFile, publicCert);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [certificateFile]
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options);
+
+            await using TlsTestServer testServer = new TlsTestServer(issuer);
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Passed, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.Passed, result.CertificateValidation);
+            
+            Assert.NotNull(result.Connection);
+            Assert.NotNull(result.Certificate);
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.RemoteIpAddress));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Issuer));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Subject));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Sha256Fingerprint));
+            
+            Assert.NotEqual(default, result.Certificate.NotAfter);
+            Assert.NotEqual(default, result.Certificate.NotBefore);
+
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.TlsProtocol));
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.CipherSuite));
+
+            Assert.True(result.Certificate.NotAfter > result.Certificate.NotBefore);
+            Assert.Equal(TrustMode.CustomRoots, result.TrustContext.Mode);
+            Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+            Assert.Contains(issuer.GetCertHashString(HashAlgorithmName.SHA256), result.TrustContext.RootSha256Fingerprints);
+            Assert.DoesNotContain(result.Findings, f => f.Code.StartsWith("CERT_"));
+            Assert.DoesNotContain(result.Findings, f => f.Code.StartsWith("TLS_"));
+        }
+        finally
+        {
+            File.Delete(certificateFile);
+        }
     }
 }

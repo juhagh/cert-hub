@@ -15,9 +15,17 @@ public sealed class TlsTestServer : IAsyncDisposable
     
     public int Port { get; }
 
-    public TlsTestServer()
+    public TlsTestServer(X509Certificate2? issuer = null)
     {
-        _certificate = CreateServerCertificate();
+        if (issuer is null)
+        {
+            _certificate = CreateServerCertificate();    
+        }
+        else
+        {
+            _certificate = CreateIssuedServerCertificate(issuer);
+        }
+        
         _listener = new TcpListener(localaddr: IPAddress.Loopback, port: 0);
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
@@ -89,7 +97,93 @@ public sealed class TlsTestServer : IAsyncDisposable
             notBefore: now.AddMinutes(-5),
             notAfter: now.AddDays(1));
     }
+    
+    internal static X509Certificate2 CreateCertificateAuthority()
+    {
+        //Generate a public/private key pair.
+        using RSA rsa = RSA.Create(2048);
 
+        CertificateRequest request = new CertificateRequest(
+            subjectName: "CN=CertHub Test Root CA",
+            key: rsa,
+            hashAlgorithm: HashAlgorithmName.SHA256,
+            padding: RSASignaturePadding.Pkcs1);
+
+        X509BasicConstraintsExtension constraintsExtension = new X509BasicConstraintsExtension(
+            certificateAuthority: true,
+            hasPathLengthConstraint: false,
+            pathLengthConstraint: 0,
+            critical: true);
+        
+        request.CertificateExtensions.Add(constraintsExtension);
+
+        X509KeyUsageExtension keyUsageExtension = new X509KeyUsageExtension(
+            keyUsages: X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign,
+            critical: true);
+        
+        request.CertificateExtensions.Add(keyUsageExtension);
+
+        var now = DateTimeOffset.UtcNow;
+
+        return request.CreateSelfSigned(
+            notBefore: now.AddMinutes(-5),
+            notAfter: now.AddDays(1));
+    }
+
+    private static X509Certificate2 CreateIssuedServerCertificate(X509Certificate2 issuer)
+    {
+        //Generate a public/private key pair.
+        using RSA rsa = RSA.Create(2048);
+
+        CertificateRequest request = new CertificateRequest(
+            subjectName: "CN=localhost",
+            key: rsa,
+            hashAlgorithm: HashAlgorithmName.SHA256,
+            padding: RSASignaturePadding.Pkcs1);
+
+        SubjectAlternativeNameBuilder sanBuilder = new SubjectAlternativeNameBuilder();
+        sanBuilder.AddDnsName("localhost");
+        var extension = sanBuilder.Build();
+
+        request.CertificateExtensions.Add(extension);
+
+        X509BasicConstraintsExtension constraintsExtension = new X509BasicConstraintsExtension(
+            certificateAuthority: false,
+            hasPathLengthConstraint: false,
+            pathLengthConstraint: 0,
+            critical: true);
+        
+        request.CertificateExtensions.Add(constraintsExtension);
+
+        X509KeyUsageExtension keyUsageExtension = new X509KeyUsageExtension(
+            keyUsages: X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
+            critical: true);
+        
+        request.CertificateExtensions.Add(keyUsageExtension);
+
+        OidCollection oidCollection = new OidCollection();
+        oidCollection.Add(new Oid("1.3.6.1.5.5.7.3.1"));
+
+        X509EnhancedKeyUsageExtension enhancedKeyUsageExtension = new X509EnhancedKeyUsageExtension(
+            oidCollection, 
+            critical: false);
+        
+        request.CertificateExtensions.Add(enhancedKeyUsageExtension);
+
+        var now = DateTimeOffset.UtcNow;
+        
+        byte[] serial = RandomNumberGenerator.GetBytes(16);
+        serial[0] = 1;
+
+        using var issuedCertificate = request.Create(
+            issuerCertificate: issuer,
+            notBefore: now.AddMinutes(-1),
+            notAfter: now.AddHours(12),
+            serialNumber: serial);
+
+        return issuedCertificate.CopyWithPrivateKey(rsa);
+    }
+    
     private async Task ServeConnectionAsync(CancellationToken ct)
     {
         using var client = await _listener.AcceptTcpClientAsync(ct);
@@ -103,5 +197,5 @@ public sealed class TlsTestServer : IAsyncDisposable
         authenticationOptions.ClientCertificateRequired = false;
 
         await stream.AuthenticateAsServerAsync(authenticationOptions, ct);
-    } 
+    }
 }
