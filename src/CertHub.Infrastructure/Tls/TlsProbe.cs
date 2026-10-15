@@ -28,8 +28,7 @@ public sealed class TlsProbe : ITlsProbe
     {
         ct.ThrowIfCancellationRequested();
         
-        if (_options.TrustMode != TrustMode.System && _options.TrustMode != TrustMode.CustomRoots)
-            throw new ArgumentOutOfRangeException(nameof(_options.TrustMode), "Trust mode must be either System or CustomRoots.");
+        ValidateOptions();
         
         var attemptedAt = _timeProvider.GetUtcNow();
 
@@ -495,5 +494,29 @@ public sealed class TlsProbe : ITlsProbe
             Certificate: null,
             trustContext,
             diagnosticFindings);
+    }
+
+    private void ValidateOptions()
+    {
+        if (_options.TrustMode != TrustMode.System && _options.TrustMode != TrustMode.CustomRoots)
+            throw new InvalidOperationException("Trust mode must be either System or CustomRoots.");
+        
+        if (_options.Timeout <= TimeSpan.Zero || _options.Timeout > TimeSpan.FromSeconds(60))
+            throw new InvalidOperationException("Timeout value must be greater than 0 and up to 60 seconds.");
+
+        if (_options.TrustMode == TrustMode.CustomRoots)
+        {
+            if (_options.TrustConfigurationId == "system" || string.IsNullOrWhiteSpace(_options.TrustConfigurationId))
+                throw new InvalidOperationException("CustomRoots TrustMode cannot have 'system' as TrustConfigurationId and it cannot be empty." );
+        
+            if (_options.RootCertificatePaths is null || _options.RootCertificatePaths.Length == 0)
+                throw new InvalidOperationException("CustomRoots TrustMode requires at least one certificate path.");
+
+            foreach (var path in _options.RootCertificatePaths)
+            {
+                if (string.IsNullOrWhiteSpace(path))
+                    throw new InvalidOperationException("CustomRoots TrustMode certificate path cannot be empty." );
+            }
+        }
     }
 }

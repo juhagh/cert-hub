@@ -15,7 +15,7 @@ public sealed class TlsProbeTests
         var localSettings = new TlsProbeOptions
         {
             Timeout = TimeSpan.FromSeconds(5),
-            TrustMode = TrustMode.System
+            TrustMode = TrustMode.System,
         };
 
         var options = Options.Create(localSettings);
@@ -302,5 +302,169 @@ public sealed class TlsProbeTests
         {
             File.Delete(certificateFile);
         }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-1000)]
+    [InlineData(60001)]
+    public async Task ProbeAsync_WithInvalidTimeout_ThrowsInvalidOperationException(int timeoutMilliseconds)
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromMilliseconds(timeoutMilliseconds),
+            TrustMode = TrustMode.System
+        };
+
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options);
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.ProbeAsync(request));
+
+        Assert.Contains("Timeout", exception.Message);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WithUnsupportedTrustMode_ThrowsInvalidOperationException()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromMilliseconds(10000),
+            TrustMode = (TrustMode)999
+        };
+
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options);
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.ProbeAsync(request));
+
+        Assert.Contains("Trust mode", exception.Message);
+    }
+    
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("system")]
+    public async Task ProbeAsync_WithInvalidCustomTrustConfigurationId_ThrowsInvalidOperationException(string? configurationId)
+    {
+        var timeProvider = TimeProvider.System;
+        string[] certificatePath = ["fakepath"];
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromMilliseconds(10000),
+            TrustMode = TrustMode.CustomRoots,
+            RootCertificatePaths = certificatePath,
+            TrustConfigurationId = configurationId!
+        };
+        
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options);
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+    
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.ProbeAsync(request));
+    
+        Assert.Contains("TrustConfigurationId", exception.Message);
+    }
+    
+    [Fact]
+    public async Task ProbeAsync_WithNullRootCertificatePaths_ThrowsInvalidOperationException()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromMilliseconds(10000),
+            TrustMode = TrustMode.CustomRoots,
+            RootCertificatePaths = null!,
+            TrustConfigurationId = "test-root-ca"
+        };
+        
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options);
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+    
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.ProbeAsync(request));
+    
+        Assert.Contains("at least one certificate path", exception.Message);
+    }
+    
+    [Fact]
+    public async Task ProbeAsync_WithEmptyRootCertificatePaths_ThrowsInvalidOperationException()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromMilliseconds(10000),
+            TrustMode = TrustMode.CustomRoots,
+            RootCertificatePaths = [],
+            TrustConfigurationId = "test-root-ca"
+        };
+        
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options);
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+    
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.ProbeAsync(request));
+    
+        Assert.Contains("at least one certificate path", exception.Message);
+    }
+    
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task ProbeAsync_WithInvalidRootCertificatePathEntry_ThrowsInvalidOperationException(string? certificatePathEntry)
+    {
+        var timeProvider = TimeProvider.System;
+        string[] certificatePath = [certificatePathEntry!];
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromMilliseconds(10000),
+            TrustMode = TrustMode.CustomRoots,
+            RootCertificatePaths = certificatePath,
+            TrustConfigurationId = "test-root-ca"
+        };
+        
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options);
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+    
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.ProbeAsync(request));
+    
+        Assert.Contains("certificate path cannot be empty", exception.Message);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WithBlankRootPathAfterNonBlankEntry_ThrowsInvalidOperationException()
+    {
+        var timeProvider = TimeProvider.System;
+        string[] certificatePath = ["validEntry", " "];
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromMilliseconds(10000),
+            TrustMode = TrustMode.CustomRoots,
+            RootCertificatePaths = certificatePath,
+            TrustConfigurationId = "test-root-ca"
+        };
+        
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options);
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+    
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.ProbeAsync(request));
+    
+        Assert.Contains("certificate path cannot be empty", exception.Message);
     }
 }
