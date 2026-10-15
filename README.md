@@ -27,10 +27,11 @@ Self-contained integration tests currently cover:
 - Rejection of an untrusted server certificate while preserving certificate evidence.
 - Cancellation before a diagnostic attempt starts.
 - Caller cancellation during an active TLS authentication attempt.
+- Timeout reporting when the shared diagnostic budget expires during TLS authentication. 
 
 Tests use in-process loopback servers, dynamically assigned ports and temporary certificates. They do not require Docker, externally hosted services or changes to the machine's trust store.
 
-Timeout reporting is implemented; its dedicated integration test is the next checkpoint. Successful authentication and other failure paths also need dedicated verification.
+Successful authentication and other failure paths also need dedicated verification.
 
 ## Build and Test
 
@@ -76,7 +77,7 @@ Design documentation:
 
 ## Next Steps
 
-- Verify diagnostic timeout behaviour and expand failure-path coverage.
+- Expand DNS, TCP and TLS failure-path coverage.
 - Add custom-root trust and test successful TLS authentication against controlled certificates.
 - Expose the diagnostic use case through an HTTP endpoint with request validation and target restrictions.
 - Automate build and test checks in GitHub Actions.

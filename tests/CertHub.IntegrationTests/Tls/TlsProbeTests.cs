@@ -81,4 +81,38 @@ public sealed class TlsProbeTests
         cts.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probeTask.WaitAsync(TimeSpan.FromSeconds(5)));
     }
+
+    [Fact]
+    public async Task ProbeAsync_WhenTlsAuthenticationTimesOut_ReturnsTimeoutReport()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(2),
+            TrustMode = TrustMode.System
+        };
+
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options);
+
+        await using StallingTlsTestServer testServer = new StallingTlsTestServer();
+        var request = new TlsProbeRequest("localhost", testServer.Port);
+        
+        var probeTask = sut.ProbeAsync(request);
+        
+        await testServer.ClientHelloReceived.WaitAsync(TimeSpan.FromSeconds(5));
+        
+        var result = await probeTask.WaitAsync(TimeSpan.FromSeconds(5));
+        
+        
+        Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+        Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+        Assert.Equal(CheckOutcome.Failed, result.TlsAuthentication);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.CertificateValidation);
+        Assert.False(string.IsNullOrWhiteSpace(result.Connection.RemoteIpAddress));
+        Assert.Null(result.Certificate);
+        Assert.Null(result.Connection.TlsProtocol);
+        Assert.Null(result.Connection.CipherSuite);
+        Assert.Contains(result.Findings, f => f.Code == "TLS_TIMEOUT");
+    }
 }
