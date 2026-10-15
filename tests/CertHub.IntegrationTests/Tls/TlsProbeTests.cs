@@ -177,4 +177,67 @@ public sealed class TlsProbeTests
             File.Delete(certificateFile);
         }
     }
+    
+    [Fact]
+    public async Task ProbeAsync_WithUnrelatedCustomRoot_ReturnsValidationFailure()
+    { 
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        using var unrelatedRoot = TlsTestServer.CreateCertificateAuthority();
+
+        var certificateFile = Path.GetTempFileName();
+
+        try
+        {
+            string unrelatedCert = unrelatedRoot.ExportCertificatePem();
+            File.WriteAllText(certificateFile, unrelatedCert);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "unrelated-test-root",
+                RootCertificatePaths = [certificateFile]
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options);
+
+            await using TlsTestServer testServer = new TlsTestServer(issuer);
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Failed, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.Failed, result.CertificateValidation);
+            
+            Assert.NotNull(result.Connection);
+            Assert.NotNull(result.Certificate);
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.RemoteIpAddress));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Issuer));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Subject));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Sha256Fingerprint));
+            
+            Assert.NotEqual(default, result.Certificate.NotAfter);
+            Assert.NotEqual(default, result.Certificate.NotBefore);
+
+            Assert.Null(result.Connection.TlsProtocol);
+            Assert.Null(result.Connection.CipherSuite);
+
+            Assert.True(result.Certificate.NotAfter > result.Certificate.NotBefore);
+            Assert.Equal(TrustMode.CustomRoots, result.TrustContext.Mode);
+            Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+            Assert.Contains(unrelatedRoot.GetCertHashString(HashAlgorithmName.SHA256), result.TrustContext.RootSha256Fingerprints);
+            Assert.DoesNotContain(issuer.GetCertHashString(HashAlgorithmName.SHA256), result.TrustContext.RootSha256Fingerprints);
+            
+            Assert.DoesNotContain(result.Findings, f => f.Code == "CERT_HOSTNAME_MISMATCH");
+            Assert.Contains(result.Findings, f => f.Code == "CERT_CHAIN_INVALID");
+        }
+        finally
+        {
+            File.Delete(certificateFile);
+        }
+    }
 }
