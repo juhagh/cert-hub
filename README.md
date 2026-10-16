@@ -29,12 +29,17 @@ Self-contained integration tests currently cover:
 - Caller cancellation during an active TLS authentication attempt.
 - Timeout reporting when the shared diagnostic budget expires during TLS authentication. 
 - Successful TLS authentication using a configured custom root CA.
+- Rejection when the configured root did not issue the server certificate.
+- Hostname mismatch rejection even when the issuing CA is trusted.
+- Rejection of invalid timeouts, trust modes, custom-root labels and certificate-path settings.
 
 Tests use in-process loopback servers, dynamically assigned ports and temporary certificates. They do not require Docker, externally hosted services or changes to the machine's trust store.
 
 Additional DNS, TCP and TLS failure paths need dedicated verification.
 
 ## Build and Test
+
+GitHub Actions builds the solution in Release and runs the integration tests on Ubuntu for pull requests targeting main and pushes to main.
 
 Prerequisite: the .NET 10 SDK.
 
@@ -44,6 +49,13 @@ Run from the repository root:
 dotnet build
 dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj
 ```
+
+## Configuration
+
+- Timeout must be greater than zero and at most 60 seconds.
+- Trust mode is `System` or `CustomRoots`.
+- CustomRoots requires a non-blank configuration ID other than "system" and at least one non-blank certificate path.
+- Paths must identify readable public certificate files; loading errors propagate as configuration failures.
 
 ## TLS Lab
 
@@ -80,7 +92,6 @@ Design documentation:
 
 - Expand DNS, TCP and TLS failure-path coverage.
 - Expose the diagnostic use case through an HTTP endpoint with request validation and target restrictions.
-- Automate build and test checks in GitHub Actions.
 
 Later milestones include mTLS diagnostics, persistent history, scheduled monitoring, expiry alerts and Azure deployment.
 

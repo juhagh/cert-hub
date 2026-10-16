@@ -47,15 +47,23 @@ The report contains the following information when available:
 
 | Section | Evidence |
 |---|---|
-| Connection | Connected IP address, TCP connection duration, negotiated TLS version, cipher suite and ALPN protocol |
-| Server certificate | Subject, issuer, Subject Alternative Names, validity dates and SHA-256 fingerprint |
-| Certificate chain | Available built-chain elements and their validation errors |
+| Connection | Connected IP, TCP-stage duration, negotiated TLS version and cipher suite. TCP-stage duration includes possible earlier failed address attempts and is currently recorded on TCP success. |
+| Server certificate | Subject, issuer, validity dates and SHA-256 fingerprint. |
+| Certificate chain | Chain-status details are included in finding messages; there is no structured chain section yet. |
 | Findings | Stable finding code, readable explanation and supporting details |
-| Trust context | Trust mode, configuration identifier and certificate evaluation time |
+| Trust context | Trust mode, configuration identifier and certificate evaluation time, configured custom-root fingerprints |
 
 Unavailable information is omitted or represented as absent. It must not be interpreted as a successful check.
 
 Certificate metadata may be partial. The built chain is not claimed to be an exact list of certificates sent by the server.
+
+### Planned Evidence
+
+Following evidence is planned to be included in future implementations:
+
+- SAN entries
+- Structured built-chain details
+- ALPN
 
 ## Validation Policy
 
@@ -72,7 +80,7 @@ The policy checks:
 
 Platform TLS and certificate facilities perform these checks. CertHub translates their results into diagnostic findings.
 
-Revocation checking and automatic downloads of missing issuer certificates are disabled for the initial milestone. These limitations are stated in the report.
+Revocation checking and automatic issuer-certificate downloads are disabled by the current implementation. These limitations are documented here; the report does not yet contain explicit policy fields for them.
 
 ## Trust Context
 
@@ -93,23 +101,24 @@ A report can contain multiple findings. For example, a certificate may be expire
 
 Initial finding categories include:
 
-- DNS resolution failure.
-- TCP connection refusal, timeout or other connection error.
-- TLS authentication failure.
-- Certificate unavailable.
-- Hostname mismatch.
-- Untrusted or incomplete certificate chain.
-- Expired or not-yet-valid certificate.
-- Invalid certificate usage.
-- Other validation errors.
+| Stage | Codes |
+|---|---|
+| DNS | `DNS_RESOLUTION_FAILED`, `DNS_TIMEOUT` |
+| TCP | `TCP_CONNECTION_FAILED`, `TCP_TIMEOUT` |
+| TLS | `TLS_AUTHENTICATION_FAILED`, `TLS_CONNECTION_FAILED`, `TLS_TIMEOUT` |
+| Certificate | `CERT_NOT_PRESENTED`, `CERT_HOSTNAME_MISMATCH`, `CERT_CHAIN_INVALID` |
 
-Unrecognised errors are retained as general findings with available supporting details.
+Incomplete chains and invalid usage currently appear as platform details under CERT_CHAIN_INVALID, rather than dedicated codes.
+
+Chain-status errors are retained in CERT_CHAIN_INVALID messages; unexpected implementation errors propagate.
 
 A timeout does not prove that the server is down. Findings describe what was observed without asserting an unsupported cause.
 
 ## Timeout and Cancellation
 
 The diagnostic attempt has a bounded timeout.
+
+Timeout value can range from greater than zero up to 60 seconds and is shared across the entire probe attempt rather than per stage.
 
 When the probe's timeout expires, the report identifies the stage where it occurred and preserves existing evidence.
 
@@ -129,15 +138,18 @@ These examples describe expected behaviour with validation enforced.
 | TCP connection refused | Passed | Failed | NotEvaluated | NotEvaluated |
 | DNS resolution failure | Failed | NotEvaluated | NotEvaluated | NotEvaluated |
 
+Expiry, DNS failure and TCP refusal still require dedicated tests.
+
 Certificate metadata can remain available when certificate validation fails. Negotiated connection information is recorded only when the probe can establish it.
 
-## Initial Types
+## Implemented Types
 
-The design will begin with these types under `CertHub.Domain/Diagnostics/`:
+The following types are implemented under `CertHub.Domain/Diagnostics/`:
 
 - `CheckOutcome` — Passed, Failed or NotEvaluated.
-- `DiagnosticFinding` — A finding code, explanation and supporting details.
+- `DiagnosticFinding` — A finding code, and a message with explanation and supporting details.
 - `CertificateSummary` — Available server-certificate metadata.
 - `TlsDiagnosticReport` — Target, check outcomes, evidence, findings and trust context.
-
-Their exact properties will be defined as the first use case is implemented.
+- `ConnectionSummary`
+- `TrustContext`
+- `TrustMode`
