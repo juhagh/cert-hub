@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions: 
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+          
+      - name: Restore dependencies
+        run: dotnet restore CertHub.slnx
+        
+      - name: Build solution
+        run: dotnet build CertHub.slnx --no-restore --configuration Release
+        
+      - name: Run tests
+        run: dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj --no-build --no-restore --configuration Release
