@@ -1,24 +1,31 @@
 # CertHub
 
-CertHub is a .NET 10 application for investigating TLS connectivity failures between services. It is motivated by operational troubleshooting challenges where certificate expiry, trust configuration and uncertainty about the certificate a service actually uses make failures difficult to diagnose.
+CertHub is a .NET 10 application for investigating TLS connectivity failures between services. It is motivated by
+operational troubleshooting challenges where certificate expiry, trust configuration and uncertainty about the
+certificate a service actually uses make failures difficult to diagnose.
 
-The goal is to report what a connection attempt observed: which stages succeeded, where it failed, and what certificate and connection evidence remains available.
+The goal is to report what a connection attempt observed: which stages succeeded, where it failed, and what certificate
+and connection evidence remains available.
 
 ## Current Status
 
-Active development. The core TLS probe is implemented and exercised through integration tests. The HTTP diagnostic endpoint has not yet been implemented; the API project currently contains template scaffolding.
+Active development. The core TLS probe is implemented and exercised through integration tests. The HTTP diagnostic
+endpoint has not yet been implemented; the API project currently contains template scaffolding.
 
 The probe currently supports:
 
 - DNS resolution and sequential TCP connection attempts across resolved addresses.
-- Server TLS authentication with certificate validation enforced against system trust or explicitly configured custom roots.
+- Server TLS authentication with certificate validation enforced against system trust or explicitly configured custom
+  roots.
 - Diagnostic reports distinguishing DNS, TCP, TLS authentication and certificate-validation outcomes.
-- Certificate subject, issuer, validity dates and SHA-256 fingerprint capture, including when validation rejects the certificate.
+- Certificate subject, issuer, validity dates and SHA-256 fingerprint capture, including when validation rejects the
+  certificate.
 - Hostname and certificate-chain validation findings, with supporting platform error details.
 - Connected IP address, TCP-stage duration and negotiated TLS protocol and cipher suite when authentication succeeds.
 - A shared diagnostic timeout and propagation of caller cancellation.
 
-Revocation checking and automatic downloads of missing issuer certificates are disabled for this initial milestone. The probe sends no HTTP request or other application data to the target.
+Revocation checking and automatic downloads of missing issuer certificates are disabled for this initial milestone. The
+probe sends no HTTP request or other application data to the target.
 
 ## Tests
 
@@ -27,19 +34,21 @@ Self-contained integration tests currently cover:
 - Rejection of an untrusted server certificate while preserving certificate evidence.
 - Cancellation before a diagnostic attempt starts.
 - Caller cancellation during an active TLS authentication attempt.
-- Timeout reporting when the shared diagnostic budget expires during TLS authentication. 
+- Timeout reporting when the shared diagnostic budget expires during TLS authentication.
 - Successful TLS authentication using a configured custom root CA.
 - Rejection when the configured root did not issue the server certificate.
 - Hostname mismatch rejection even when the issuing CA is trusted.
 - Rejection of invalid timeouts, trust modes, custom-root labels and certificate-path settings.
 
-Tests use in-process loopback servers, dynamically assigned ports and temporary certificates. They do not require Docker, externally hosted services or changes to the machine's trust store.
+Tests use in-process loopback servers, dynamically assigned ports and temporary certificates. They do not require
+Docker, externally hosted services or changes to the machine's trust store.
 
 Additional DNS, TCP and TLS failure paths need dedicated verification.
 
 ## Build and Test
 
-GitHub Actions builds the solution in Release and runs the integration tests on Ubuntu for pull requests targeting main and pushes to main.
+GitHub Actions builds the solution in Release and runs the integration tests on Ubuntu for pull requests targeting main
+and pushes to main.
 
 Prerequisite: the .NET 10 SDK.
 
@@ -65,7 +74,9 @@ A separate Docker-based lab provides controlled scenarios for learning and inves
 - [Untrusted certificate authority](lab/scenarios/02-untrusted-ca.md)
 - [Hostname mismatch](lab/scenarios/03-hostname-mismatch.md)
 
-The lab uses a locally generated root CA and server certificate. Generated certificates, private keys and PFX files are excluded from Git and from the Docker build context. The server certificate is mounted read-only at runtime, and its password is supplied through an environment variable.
+The lab uses a locally generated root CA and server certificate. Generated certificates, private keys and PFX files are
+excluded from Git and from the Docker build context. The server certificate is mounted read-only at runtime, and its
+password is supplied through an environment variable.
 
 The lab is separate from the integration-test servers. Expired-certificate and mTLS scenarios are planned.
 
@@ -73,12 +84,12 @@ The lab is separate from the integration-test servers. Expired-certificate and m
 
 The solution separates diagnostic contracts, use-case orchestration and networking implementation:
 
-| Project | Responsibility |
-|---|---|
-| `CertHub.Domain` | Diagnostic report types, outcomes and findings |
-| `CertHub.Application` | Diagnostic request, use case and TLS probe interface |
+| Project                  | Responsibility                                            |
+|--------------------------|-----------------------------------------------------------|
+| `CertHub.Domain`         | Diagnostic report types, outcomes and findings            |
+| `CertHub.Application`    | Diagnostic request, use case and TLS probe interface      |
 | `CertHub.Infrastructure` | DNS, TCP, TLS probing and certificate evidence extraction |
-| `CertHub.Api` | Future HTTP entry point and dependency composition |
+| `CertHub.Api`            | Future HTTP entry point and dependency composition        |
 
 The product projects do not reference the lab server.
 
