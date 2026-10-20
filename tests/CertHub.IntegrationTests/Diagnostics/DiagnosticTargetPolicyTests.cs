@@ -1,5 +1,4 @@
 using CertHub.Api.Features.Diagnostics;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace CertHub.IntegrationTests.Diagnostics;
