@@ -1,6 +1,9 @@
-@CertHub.Api_HostAddress = http://localhost:5129
+@CertHub_Api_HostAddress = http://localhost:5129
 
-GET {{CertHub.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+POST {{CertHub_Api_HostAddress}}/diagnostics/tls
+Content-Type: application/json
 
-###
+{
+  "hostname": "",
+  "port": 0
+}
