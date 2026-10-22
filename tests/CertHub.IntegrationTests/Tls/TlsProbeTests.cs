@@ -511,7 +511,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+        var sut = new TlsProbe(timeProvider, options, new FailingHostResolver());
         
         var request = new TlsProbeRequest("does-not-exist.invalid", 443);
 
