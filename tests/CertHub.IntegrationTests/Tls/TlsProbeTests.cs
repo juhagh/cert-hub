@@ -500,6 +500,31 @@ public sealed class TlsProbeTests
         Assert.DoesNotContain(result.Findings, f => f.Code == "TLS_AUTHENTICATION_FAILED");
     }
 
+    [Fact]
+    public async Task ProbeAsync_WhenHostnameCannotBeResolved_ReturnsDnsFailureReport()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(5),
+            TrustMode = TrustMode.System,
+        };
+        
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options);
+        
+        var request = new TlsProbeRequest("does-not-exist.invalid", 443);
+
+        var result = await sut.ProbeAsync(request);
+        
+        Assert.Equal(CheckOutcome.Failed, result.DnsResolution);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.TcpConnection);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.TlsAuthentication);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.CertificateValidation);
+        Assert.Null(result.Certificate);
+        Assert.Contains(result.Findings, f => f.Code == "DNS_RESOLUTION_FAILED");
+    }
+
     private static int GetUnusedLoopBackPort()
     {
         using var listener = new TcpListener(localaddr: IPAddress.Loopback, port: 0);
