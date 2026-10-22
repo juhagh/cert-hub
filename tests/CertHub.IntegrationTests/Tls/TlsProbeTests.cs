@@ -21,7 +21,7 @@ public sealed class TlsProbeTests
         };
 
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
         await using TlsTestServer testServer = new TlsTestServer();
         var request = new TlsProbeRequest("localhost", testServer.Port);
@@ -51,7 +51,7 @@ public sealed class TlsProbeTests
         };
 
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         var request = new TlsProbeRequest("localhost", 8443);
         
         using var cts = new CancellationTokenSource();
@@ -72,7 +72,7 @@ public sealed class TlsProbeTests
         };
 
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
         await using StallingTlsTestServer testServer = new StallingTlsTestServer();
         var request = new TlsProbeRequest("localhost", testServer.Port);
@@ -96,7 +96,7 @@ public sealed class TlsProbeTests
         };
 
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
         await using StallingTlsTestServer testServer = new StallingTlsTestServer();
         var request = new TlsProbeRequest("localhost", testServer.Port);
@@ -141,7 +141,7 @@ public sealed class TlsProbeTests
             };
 
             var options = Options.Create(localSettings);
-            var sut = new TlsProbe(timeProvider, options);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
             await using TlsTestServer testServer = new TlsTestServer(issuer);
             var request = new TlsProbeRequest("localhost", testServer.Port);
@@ -203,7 +203,7 @@ public sealed class TlsProbeTests
             };
 
             var options = Options.Create(localSettings);
-            var sut = new TlsProbe(timeProvider, options);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
             await using TlsTestServer testServer = new TlsTestServer(issuer);
             var request = new TlsProbeRequest("localhost", testServer.Port);
@@ -265,7 +265,7 @@ public sealed class TlsProbeTests
             };
 
             var options = Options.Create(localSettings);
-            var sut = new TlsProbe(timeProvider, options);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
             await using TlsTestServer testServer = new TlsTestServer(issuer, "wrong-host.example");
             var request = new TlsProbeRequest("localhost", testServer.Port);
@@ -321,7 +321,7 @@ public sealed class TlsProbeTests
         };
 
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
 
@@ -341,7 +341,7 @@ public sealed class TlsProbeTests
         };
 
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
 
@@ -368,7 +368,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
     
@@ -390,7 +390,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
     
@@ -412,7 +412,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
     
@@ -438,7 +438,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
     
@@ -461,7 +461,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
     
@@ -481,7 +481,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("127.0.0.1", GetUnusedLoopBackPort());
 
@@ -511,7 +511,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("does-not-exist.invalid", 443);
 
