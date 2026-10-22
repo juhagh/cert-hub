@@ -35,11 +35,11 @@ dotnet build CertHub.slnx --no-restore
 dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj
 ```
 
-The integration suite currently contains 65 test cases, all passing in the latest local run. Tests cover DNS resolution failure, TCP connection refusal, probe configuration, certificate validation and evidence preservation, custom-root trust, cancellation, timeouts, request validation, target policy and HTTP endpoint behaviour.
+The integration suite currently contains 65 test cases. Tests cover DNS resolution failure, TCP connection refusal, probe configuration, certificate validation and evidence preservation, custom-root trust, cancellation, timeouts, request validation, target policy and HTTP endpoint behaviour.
 
-Most tests use in-process API hosting, loopback servers, dynamically assigned ports and temporary certificates. Endpoint tests use a stub probe; connection tests exercise real TCP/TLS behaviour. Tests do not require Docker or changes to the machine's trust store.
+Tests use in-process API hosting, loopback servers, dynamically assigned ports and temporary certificates. Endpoint tests use a stub probe; connection tests exercise real TCP/TLS behaviour. Tests do not require Docker, externally hosted target services or changes to the machine's trust store.
 
-The DNS failure test resolves `does-not-exist.invalid` through the operating system's name resolver. It depends on the machine's resolution configuration and timing, including local hosts entries, caches and configured DNS servers. It does not necessarily make an external DNS query or require an internet connection. This test is therefore environment-dependent rather than fully isolated.
+The DNS failure test uses an injected resolver that returns `HostNotFound`, making the failure independent of local hosts entries, DNS caches and configured DNS servers. Production resolution uses `SystemHostResolver`, which delegates to the operating system. Existing loopback connection tests continue to use the system resolver for local addresses.
 
 GitHub Actions restores, builds and runs the integration suite in Release configuration on Ubuntu for pull requests targeting `main` and pushes to `main`.
 
@@ -95,7 +95,7 @@ The solution separates diagnostic contracts, use-case orchestration and networki
 | `CertHub.Infrastructure` | DNS, TCP, TLS probing and certificate evidence extraction |
 | `CertHub.Api` | HTTP endpoint, request validation, target policy and dependency composition |
 
-The product projects do not reference the lab server.
+The product projects do not reference the lab server. Within Infrastructure, `TlsProbe` depends on `IHostResolver`; `SystemHostResolver` supplies real address resolution, while tests can substitute controlled results or failures.
 
 Design documentation:
 
@@ -106,7 +106,7 @@ Design documentation:
 
 ## Next Steps
 
-- Expand DNS and TCP failure-path coverage, including deterministic resolver tests and address fallback.
+- Expand DNS and TCP coverage with controlled resolver timeouts, empty address results and address fallback.
 - Improve diagnostic evidence and report presentation as further scenarios are added.
 - Define access controls and resolved-address restrictions before broader deployment.
 
