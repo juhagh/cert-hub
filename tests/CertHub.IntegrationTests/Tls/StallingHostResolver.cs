@@ -18,6 +18,6 @@ public sealed class StallingHostResolver : IHostResolver
 
         await Task.Delay(Timeout.InfiniteTimeSpan, ct);
         
-        return Array.Empty<IPAddress>(); // why Array.Empty<IPAddress>() instead of Task.FromResult(Array.Empty<IPAddress>())?
+        return Array.Empty<IPAddress>();
     }
 }
