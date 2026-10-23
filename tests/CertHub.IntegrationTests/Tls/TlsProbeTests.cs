@@ -580,6 +580,33 @@ public sealed class TlsProbeTests
         Assert.Contains(result.Findings, f => f.Code == "DNS_TIMEOUT");
         Assert.DoesNotContain(result.Findings, f => f.Code == "DNS_RESOLUTION_FAILED");
     }
+
+    [Fact]
+    public async Task ProbeAsync_WhenCancelledDuringDnsResolution_ThrowsOperationCanceledException()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(30),
+            TrustMode = TrustMode.System,
+        };
+
+        var hostResolver = new StallingHostResolver();
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options, hostResolver);
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+
+        using var cts = new CancellationTokenSource();
+        
+        var probeTask = sut.ProbeAsync(request, cts.Token);
+        
+        await hostResolver.ResolutionStarted.WaitAsync(TimeSpan.FromSeconds(5));
+
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probeTask.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
     
     private static int GetUnusedLoopBackPort()
     {
