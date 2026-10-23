@@ -549,8 +549,38 @@ public sealed class TlsProbeTests
         Assert.Null(result.Certificate);
         Assert.Contains(result.Findings, f => f.Code == "DNS_RESOLUTION_FAILED");
     }
-    
 
+    [Fact]
+    public async Task ProbeAsync_WhenDnsResolutionTimesOut_ReturnsTimeoutReport()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(2),
+            TrustMode = TrustMode.System,
+        };
+
+        var hostResolver = new StallingHostResolver();
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options, hostResolver);
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+
+        var probeTask = sut.ProbeAsync(request);
+        
+        await hostResolver.ResolutionStarted.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var result = await probeTask.WaitAsync(TimeSpan.FromSeconds(5));
+        
+        Assert.Equal(CheckOutcome.Failed, result.DnsResolution);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.TcpConnection);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.TlsAuthentication);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.CertificateValidation);
+        Assert.Null(result.Certificate);
+        Assert.Contains(result.Findings, f => f.Code == "DNS_TIMEOUT");
+        Assert.DoesNotContain(result.Findings, f => f.Code == "DNS_RESOLUTION_FAILED");
+    }
+    
     private static int GetUnusedLoopBackPort()
     {
         using var listener = new TcpListener(localaddr: IPAddress.Loopback, port: 0);
