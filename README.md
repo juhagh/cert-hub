@@ -35,11 +35,18 @@ dotnet build CertHub.slnx --no-restore
 dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj
 ```
 
-The integration suite currently contains 65 test cases. Tests cover DNS resolution failure, TCP connection refusal, probe configuration, certificate validation and evidence preservation, custom-root trust, cancellation, timeouts, request validation, target policy and HTTP endpoint behaviour.
+The integration suite currently contains 69 test cases. Coverage includes:
+
+- DNS resolution failure, empty address results, timeout reporting and caller cancellation during resolution.
+- TCP connection refusal and fallback to a second address while preserving the first connection failure finding.
+- Probe configuration, certificate validation and evidence preservation, custom-root trust, TLS timeouts and caller cancellation.
+- Request validation, target policy and HTTP endpoint behaviour.
 
 Tests use in-process API hosting, loopback servers, dynamically assigned ports and temporary certificates. Endpoint tests use a stub probe; connection tests exercise real TCP/TLS behaviour. Tests do not require Docker, externally hosted target services or changes to the machine's trust store.
 
-The DNS failure test uses an injected resolver that returns `HostNotFound`, making the failure independent of local hosts entries, DNS caches and configured DNS servers. Production resolution uses `SystemHostResolver`, which delegates to the operating system. Existing loopback connection tests continue to use the system resolver for local addresses.
+DNS failure, empty-result, timeout and cancellation tests use controlled implementations of `IHostResolver`, making those scenarios independent of local hosts entries, DNS caches and configured DNS servers. Production resolution uses `SystemHostResolver`, which delegates to the operating system. Other loopback connection tests continue to exercise system resolution for local addresses.
+
+The address fallback test supplies IPv6 loopback (`::1`) before IPv4 loopback (`127.0.0.1`) and connects to an IPv4-only test server. It verifies that the first connection failure remains in the report after successful TCP and TLS authentication through the second address. This test requires IPv6 support.
 
 GitHub Actions restores, builds and runs the integration suite in Release configuration on Ubuntu for pull requests targeting `main` and pushes to `main`.
 
@@ -106,7 +113,6 @@ Design documentation:
 
 ## Next Steps
 
-- Expand DNS and TCP coverage with controlled resolver timeouts, empty address results and address fallback.
 - Improve diagnostic evidence and report presentation as further scenarios are added.
 - Define access controls and resolved-address restrictions before broader deployment.
 
