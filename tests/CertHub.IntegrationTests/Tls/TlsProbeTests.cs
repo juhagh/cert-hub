@@ -607,6 +607,71 @@ public sealed class TlsProbeTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probeTask.WaitAsync(TimeSpan.FromSeconds(5)));
     }
+
+    [Fact]
+    public async Task ProbeAsync_WhenFirstAddressFails_ConnectsToNextAddress()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+
+        var certificateFile = Path.GetTempFileName();
+
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(certificateFile, publicCert);
+
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [certificateFile]
+            };
+
+            var options = Options.Create(localSettings);
+
+            var addresses = new IPAddress[] { IPAddress.IPv6Loopback, IPAddress.Loopback };
+            var sut = new TlsProbe(timeProvider, options, new FixedHostResolver(addresses));
+
+            await using TlsTestServer testServer = new TlsTestServer(issuer);
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Passed, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.Passed, result.CertificateValidation);
+
+            Assert.NotNull(result.Connection);
+            Assert.NotNull(result.Certificate);
+            Assert.Equal(IPAddress.Loopback.ToString(), result.Connection.RemoteIpAddress);
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Issuer));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Subject));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Sha256Fingerprint));
+
+            Assert.NotEqual(default, result.Certificate.NotAfter);
+            Assert.NotEqual(default, result.Certificate.NotBefore);
+
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.TlsProtocol));
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.CipherSuite));
+
+            Assert.True(result.Certificate.NotAfter > result.Certificate.NotBefore);
+            Assert.Equal(TrustMode.CustomRoots, result.TrustContext.Mode);
+            Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+            Assert.Contains(issuer.GetCertHashString(HashAlgorithmName.SHA256),
+                result.TrustContext.RootSha256Fingerprints);
+            Assert.Contains(result.Findings, f => f.Code == "TCP_CONNECTION_FAILED" && 
+                                                  f.Message.Contains("::1"));
+            Assert.DoesNotContain(result.Findings, f => f.Code.StartsWith("CERT_"));
+            Assert.DoesNotContain(result.Findings, f => f.Code.StartsWith("TLS_"));
+        }
+        finally
+        {
+            File.Delete(certificateFile);
+        }
+    }
     
     private static int GetUnusedLoopBackPort()
     {
