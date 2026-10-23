@@ -35,14 +35,17 @@ dotnet build CertHub.slnx --no-restore
 dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj
 ```
 
-The integration suite currently contains 69 test cases. Coverage includes:
+The integration suite currently contains 71 test cases. Coverage includes:
 
 - DNS resolution failure, empty address results, timeout reporting and caller cancellation during resolution.
 - TCP connection refusal and fallback to a second address while preserving the first connection failure finding.
 - Probe configuration, certificate validation and evidence preservation, custom-root trust, TLS timeouts and caller cancellation.
+- Rejection of expired and not-yet-valid server certificates issued by a trusted test CA, with certificate evidence preserved.
 - Request validation, target policy and HTTP endpoint behaviour.
 
 Tests use in-process API hosting, loopback servers, dynamically assigned ports and temporary certificates. Endpoint tests use a stub probe; connection tests exercise real TCP/TLS behaviour. Tests do not require Docker, externally hosted target services or changes to the machine's trust store.
+
+Certificate-validity tests generate server certificates with explicit validity dates and use a currently valid, trusted test CA. They verify the `NotTimeValid` chain status together with the captured certificate dates relative to the report's evaluation time, distinguishing expiry from a certificate that is not yet valid. The current report exposes these through `CERT_CHAIN_INVALID` findings and certificate metadata; dedicated expiry finding codes are not yet implemented.
 
 DNS failure, empty-result, timeout and cancellation tests use controlled implementations of `IHostResolver`, making those scenarios independent of local hosts entries, DNS caches and configured DNS servers. Production resolution uses `SystemHostResolver`, which delegates to the operating system. Other loopback connection tests continue to exercise system resolution for local addresses.
 
@@ -89,7 +92,7 @@ Once the generated certificate and password are available, start the lab from th
 docker compose -f lab/compose.yaml up --build -d
 ```
 
-The lab is separate from the integration-test servers. Expired-certificate and mTLS lab scenarios are planned.
+The lab is separate from the integration-test servers. Expired and not-yet-valid certificates are covered by integration tests; corresponding Docker lab scenarios and mTLS lab scenarios remain planned.
 
 ## Architecture
 
