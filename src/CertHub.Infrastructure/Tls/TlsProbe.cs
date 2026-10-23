@@ -17,11 +17,13 @@ public sealed class TlsProbe : ITlsProbe
 
     private readonly TimeProvider _timeProvider;
     private readonly TlsProbeOptions _options;
+    private readonly IHostResolver _hostResolver;
 
-    public TlsProbe(TimeProvider timeProvider, IOptions<TlsProbeOptions> options)
+    public TlsProbe(TimeProvider timeProvider, IOptions<TlsProbeOptions> options, IHostResolver hostResolver)
     {
         _timeProvider = timeProvider;
         _options = options.Value;
+        _hostResolver = hostResolver;
     }
     
     public async Task<TlsDiagnosticReport> ProbeAsync(TlsProbeRequest request, CancellationToken ct = default)
@@ -61,7 +63,7 @@ public sealed class TlsProbe : ITlsProbe
             // DNS Resolution
             try
             {
-                addresses = await Dns.GetHostAddressesAsync(request.Hostname, linkedCts.Token);
+                addresses = await _hostResolver.ResolveAsync(request.Hostname, linkedCts.Token);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

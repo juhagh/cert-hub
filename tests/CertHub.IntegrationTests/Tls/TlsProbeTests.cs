@@ -21,7 +21,7 @@ public sealed class TlsProbeTests
         };
 
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
         await using TlsTestServer testServer = new TlsTestServer();
         var request = new TlsProbeRequest("localhost", testServer.Port);
@@ -51,7 +51,7 @@ public sealed class TlsProbeTests
         };
 
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         var request = new TlsProbeRequest("localhost", 8443);
         
         using var cts = new CancellationTokenSource();
@@ -72,7 +72,7 @@ public sealed class TlsProbeTests
         };
 
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
         await using StallingTlsTestServer testServer = new StallingTlsTestServer();
         var request = new TlsProbeRequest("localhost", testServer.Port);
@@ -96,7 +96,7 @@ public sealed class TlsProbeTests
         };
 
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
         await using StallingTlsTestServer testServer = new StallingTlsTestServer();
         var request = new TlsProbeRequest("localhost", testServer.Port);
@@ -141,7 +141,7 @@ public sealed class TlsProbeTests
             };
 
             var options = Options.Create(localSettings);
-            var sut = new TlsProbe(timeProvider, options);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
             await using TlsTestServer testServer = new TlsTestServer(issuer);
             var request = new TlsProbeRequest("localhost", testServer.Port);
@@ -203,7 +203,7 @@ public sealed class TlsProbeTests
             };
 
             var options = Options.Create(localSettings);
-            var sut = new TlsProbe(timeProvider, options);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
             await using TlsTestServer testServer = new TlsTestServer(issuer);
             var request = new TlsProbeRequest("localhost", testServer.Port);
@@ -265,7 +265,7 @@ public sealed class TlsProbeTests
             };
 
             var options = Options.Create(localSettings);
-            var sut = new TlsProbe(timeProvider, options);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
             await using TlsTestServer testServer = new TlsTestServer(issuer, "wrong-host.example");
             var request = new TlsProbeRequest("localhost", testServer.Port);
@@ -321,7 +321,7 @@ public sealed class TlsProbeTests
         };
 
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
 
@@ -341,7 +341,7 @@ public sealed class TlsProbeTests
         };
 
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
 
@@ -368,7 +368,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
     
@@ -390,7 +390,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
     
@@ -412,7 +412,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
     
@@ -438,7 +438,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
     
@@ -461,7 +461,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("localhost", 8443);
     
@@ -481,7 +481,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
         
         var request = new TlsProbeRequest("127.0.0.1", GetUnusedLoopBackPort());
 
@@ -511,7 +511,7 @@ public sealed class TlsProbeTests
         };
         
         var options = Options.Create(localSettings);
-        var sut = new TlsProbe(timeProvider, options);
+        var sut = new TlsProbe(timeProvider, options, new FailingHostResolver());
         
         var request = new TlsProbeRequest("does-not-exist.invalid", 443);
 
@@ -525,6 +525,154 @@ public sealed class TlsProbeTests
         Assert.Contains(result.Findings, f => f.Code == "DNS_RESOLUTION_FAILED");
     }
 
+    [Fact]
+    public async Task ProbeAsync_WhenResolverReturnsNoAddresses_ReturnsDnsFailureReport()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(5),
+            TrustMode = TrustMode.System,
+        };
+        
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options, new EmptyHostResolver());
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+
+        var result = await sut.ProbeAsync(request);
+        
+        Assert.Equal(CheckOutcome.Failed, result.DnsResolution);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.TcpConnection);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.TlsAuthentication);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.CertificateValidation);
+        Assert.Null(result.Certificate);
+        Assert.Contains(result.Findings, f => f.Code == "DNS_RESOLUTION_FAILED");
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WhenDnsResolutionTimesOut_ReturnsTimeoutReport()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(2),
+            TrustMode = TrustMode.System,
+        };
+
+        var hostResolver = new StallingHostResolver();
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options, hostResolver);
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+
+        var probeTask = sut.ProbeAsync(request);
+        
+        await hostResolver.ResolutionStarted.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var result = await probeTask.WaitAsync(TimeSpan.FromSeconds(5));
+        
+        Assert.Equal(CheckOutcome.Failed, result.DnsResolution);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.TcpConnection);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.TlsAuthentication);
+        Assert.Equal(CheckOutcome.NotEvaluated, result.CertificateValidation);
+        Assert.Null(result.Certificate);
+        Assert.Contains(result.Findings, f => f.Code == "DNS_TIMEOUT");
+        Assert.DoesNotContain(result.Findings, f => f.Code == "DNS_RESOLUTION_FAILED");
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WhenCancelledDuringDnsResolution_ThrowsOperationCanceledException()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(30),
+            TrustMode = TrustMode.System,
+        };
+
+        var hostResolver = new StallingHostResolver();
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options, hostResolver);
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+
+        using var cts = new CancellationTokenSource();
+        
+        var probeTask = sut.ProbeAsync(request, cts.Token);
+        
+        await hostResolver.ResolutionStarted.WaitAsync(TimeSpan.FromSeconds(5));
+
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probeTask.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WhenFirstAddressFails_ConnectsToNextAddress()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+
+        var certificateFile = Path.GetTempFileName();
+
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(certificateFile, publicCert);
+
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [certificateFile]
+            };
+
+            var options = Options.Create(localSettings);
+
+            var addresses = new IPAddress[] { IPAddress.IPv6Loopback, IPAddress.Loopback };
+            var sut = new TlsProbe(timeProvider, options, new FixedHostResolver(addresses));
+
+            await using TlsTestServer testServer = new TlsTestServer(issuer);
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Passed, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.Passed, result.CertificateValidation);
+
+            Assert.NotNull(result.Connection);
+            Assert.NotNull(result.Certificate);
+            Assert.Equal(IPAddress.Loopback.ToString(), result.Connection.RemoteIpAddress);
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Issuer));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Subject));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Sha256Fingerprint));
+
+            Assert.NotEqual(default, result.Certificate.NotAfter);
+            Assert.NotEqual(default, result.Certificate.NotBefore);
+
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.TlsProtocol));
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.CipherSuite));
+
+            Assert.True(result.Certificate.NotAfter > result.Certificate.NotBefore);
+            Assert.Equal(TrustMode.CustomRoots, result.TrustContext.Mode);
+            Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+            Assert.Contains(issuer.GetCertHashString(HashAlgorithmName.SHA256),
+                result.TrustContext.RootSha256Fingerprints);
+            Assert.Contains(result.Findings, f => f.Code == "TCP_CONNECTION_FAILED" && 
+                                                  f.Message.Contains("::1"));
+            Assert.DoesNotContain(result.Findings, f => f.Code.StartsWith("CERT_"));
+            Assert.DoesNotContain(result.Findings, f => f.Code.StartsWith("TLS_"));
+        }
+        finally
+        {
+            File.Delete(certificateFile);
+        }
+    }
+    
     private static int GetUnusedLoopBackPort()
     {
         using var listener = new TcpListener(localaddr: IPAddress.Loopback, port: 0);
