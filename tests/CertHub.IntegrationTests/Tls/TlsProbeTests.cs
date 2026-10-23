@@ -672,6 +672,71 @@ public sealed class TlsProbeTests
             File.Delete(certificateFile);
         }
     }
+
+    [Fact]
+    public async Task ProbeAsync_WithExpiredTrustedServerCertificate_ReturnsValidationFailure()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+
+        var certificateFile = Path.GetTempFileName();
+
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(certificateFile, publicCert);
+            
+            var timeProvider = TimeProvider.System;
+            var now = timeProvider.GetUtcNow();
+            
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [certificateFile]
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+
+            await using TlsTestServer testServer = new TlsTestServer(
+                issuer, 
+                certificateHostname: "localhost", 
+                certificateNotBefore: now.AddDays(-2),
+                certificateNotAfter: now.AddDays(-1));
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Failed, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.Failed, result.CertificateValidation);
+            
+            Assert.NotNull(result.Connection);
+            Assert.NotNull(result.Certificate);
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.RemoteIpAddress));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Issuer));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Subject));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Sha256Fingerprint));
+            
+            Assert.NotEqual(default, result.Certificate.NotAfter);
+            Assert.True(result.Certificate.NotAfter < result.TrustContext.EvaluationTime);
+            Assert.NotEqual(default, result.Certificate.NotBefore);
+
+            Assert.True(result.Certificate.NotAfter > result.Certificate.NotBefore);
+            Assert.Equal(TrustMode.CustomRoots, result.TrustContext.Mode);
+            Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+            Assert.Contains(issuer.GetCertHashString(HashAlgorithmName.SHA256), result.TrustContext.RootSha256Fingerprints);
+            Assert.Contains(result.Findings, f => f.Code == "CERT_CHAIN_INVALID" && f.Message.Contains("NotTimeValid"));
+            Assert.Contains(result.Findings, f => f.Code == "TLS_AUTHENTICATION_FAILED");
+            Assert.DoesNotContain(result.Findings, f => f.Code == "CERT_HOSTNAME_MISMATCH");
+        }
+        finally
+        {
+            File.Delete(certificateFile);
+        }
+    }
     
     private static int GetUnusedLoopBackPort()
     {

@@ -17,7 +17,9 @@ public sealed class TlsTestServer : IAsyncDisposable
 
     public TlsTestServer(
         X509Certificate2? issuer = null, 
-        string certificateHostname = "localhost")
+        string certificateHostname = "localhost",
+        DateTimeOffset? certificateNotBefore = null,
+        DateTimeOffset? certificateNotAfter = null)
     {
         if (issuer is null)
         {
@@ -25,7 +27,10 @@ public sealed class TlsTestServer : IAsyncDisposable
         }
         else
         {
-            _certificate = CreateIssuedServerCertificate(certificateHostname, issuer);
+            _certificate = CreateIssuedServerCertificate(certificateHostname, 
+                issuer, 
+                certificateNotBefore, 
+                certificateNotAfter);
         }
         
         _listener = new TcpListener(localaddr: IPAddress.Loopback, port: 0);
@@ -128,11 +133,15 @@ public sealed class TlsTestServer : IAsyncDisposable
         var now = DateTimeOffset.UtcNow;
 
         return request.CreateSelfSigned(
-            notBefore: now.AddMinutes(-5),
+            notBefore: now.AddDays(-7),
             notAfter: now.AddDays(1));
     }
 
-    private static X509Certificate2 CreateIssuedServerCertificate(string certificateHostname, X509Certificate2 issuer)
+    private static X509Certificate2 CreateIssuedServerCertificate(
+        string certificateHostname, 
+        X509Certificate2 issuer,
+        DateTimeOffset? notBefore,
+        DateTimeOffset? notAfter)
     {
         //Generate a public/private key pair.
         using RSA rsa = RSA.Create(2048);
@@ -179,8 +188,8 @@ public sealed class TlsTestServer : IAsyncDisposable
 
         using var issuedCertificate = request.Create(
             issuerCertificate: issuer,
-            notBefore: now.AddMinutes(-1),
-            notAfter: now.AddHours(12),
+            notBefore: notBefore ?? now.AddMinutes(-1),
+            notAfter: notAfter ?? now.AddHours(12),
             serialNumber: serial);
 
         return issuedCertificate.CopyWithPrivateKey(rsa);
