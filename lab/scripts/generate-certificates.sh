@@ -1,0 +1,204 @@
+#!/bin/bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CERTIFICATES_DIR="${SCRIPT_DIR}/../certificates"
+GENERATED_FILES_DIR="${CERTIFICATES_DIR}/generated"
+
+if ! command -v openssl >/dev/null 2>&1; then
+  echo "openssl command is required for this script to work. Please install openssl and re-run the script." >&2
+  exit 1
+fi
+
+if ! x509_help="$(openssl x509 -help 2>&1)"; then
+  echo "openssl command check failed." >&2
+  exit 1
+fi
+  
+if [[ "$x509_help" != *"-not_before"* || "$x509_help" != *"-not_after"* ]]; then
+  echo "Script requires openssl with support for \"-not_before\" and \"-not_after\" options." >&2
+  exit 1
+fi
+
+if [[ ! -f "${CERTIFICATES_DIR}/localhost.ext.cnf" || ! -r "${CERTIFICATES_DIR}/localhost.ext.cnf" ]]; then
+  echo "Certificate extension file is missing or unreadable: ${CERTIFICATES_DIR}/localhost.ext.cnf" >&2
+  exit 1
+fi
+
+if [[ ! -f "${CERTIFICATES_DIR}/root-ca.ext.cnf" || ! -r "${CERTIFICATES_DIR}/root-ca.ext.cnf" ]]; then
+  echo "Root CA extension file is missing or unreadable: ${CERTIFICATES_DIR}/root-ca.ext.cnf" >&2
+  exit 1
+fi
+
+if [[ -e "$GENERATED_FILES_DIR" || -L "$GENERATED_FILES_DIR" ]]; then
+  echo "$GENERATED_FILES_DIR already exists, please rename or move the directory before generating a new set of files." >&2
+  exit 1
+fi
+
+print_step() {
+  printf '\n=== %s ===\n\n' "$1"
+}
+
+format_certificate_date() {
+  local platform
+  platform=$(uname -s)
+  
+  if [[ $platform == "Darwin" ]]; then
+    date -u -r "$1" '+%Y%m%d%H%M%SZ'
+  elif [[ $platform == "Linux" ]]; then
+    date -u -d "@$1" '+%Y%m%d%H%M%SZ'
+  else
+    echo "Unknown platform. Script can only be used on macOS or Linux." >&2
+    return 1
+  fi
+}
+
+GENERATION_TIMESTAMP="$(date +%s)"
+
+CA_NOT_BEFORE="$(format_certificate_date "$((GENERATION_TIMESTAMP - 7 * 24 * 60 * 60))")" 
+CA_NOT_AFTER="$(format_certificate_date "$((GENERATION_TIMESTAMP + 365 * 24 * 60 * 60))")"
+SERVER_NOT_BEFORE="$(format_certificate_date "$((GENERATION_TIMESTAMP - 5 * 60))")"
+SERVER_NOT_AFTER="$(format_certificate_date "$((GENERATION_TIMESTAMP + 90 * 24 * 60 * 60))")"
+EXPIRED_NOT_BEFORE="$(format_certificate_date "$((GENERATION_TIMESTAMP - 2 * 24 * 60 * 60))")"
+EXPIRED_NOT_AFTER="$(format_certificate_date "$((GENERATION_TIMESTAMP - 24 * 60 * 60))")"
+
+umask 077
+if ! mkdir "$GENERATED_FILES_DIR"; then
+  echo "Failed to create $GENERATED_FILES_DIR directory" >&2
+  exit 1
+fi
+
+print_step "Generating root CA private-key"
+echo "Choose CA private key passphrase."
+
+openssl genpkey \
+  -algorithm RSA \
+  -pkeyopt rsa_keygen_bits:3072 \
+  -aes-256-cbc \
+  -out "${GENERATED_FILES_DIR}/certhub-lab-root-ca.key.pem"
+
+print_step "Creating the root CA's self-signed certificate"
+echo "Use CA private key passphrase."
+
+openssl x509 \
+  -new \
+  -key "${GENERATED_FILES_DIR}/certhub-lab-root-ca.key.pem" \
+  -subj "/CN=CertHub Lab Root CA" \
+  -sha256 \
+  -not_before "$CA_NOT_BEFORE" \
+  -not_after "$CA_NOT_AFTER" \
+  -extfile "${CERTIFICATES_DIR}/root-ca.ext.cnf" \
+  -extensions root_ca \
+  -out "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem"
+
+print_step "Generating the server private key"
+echo "Choose server private key passphrase."
+
+openssl genpkey \
+  -algorithm RSA \
+  -pkeyopt rsa_keygen_bits:3072 \
+  -aes-256-cbc \
+  -out "${GENERATED_FILES_DIR}/localhost.key.pem"
+
+print_step "Creating server certificate signing request"
+echo "Use server private key passphrase."
+
+openssl req \
+  -new \
+  -key "${GENERATED_FILES_DIR}/localhost.key.pem" \
+  -subj "/CN=localhost" \
+  -sha256 \
+  -addext "subjectAltName=DNS:localhost" \
+  -out "${GENERATED_FILES_DIR}/localhost.csr.pem"
+
+print_step "Issuing server certificate"
+echo "Use CA private key passphrase."
+
+openssl x509 \
+  -req \
+  -in "${GENERATED_FILES_DIR}/localhost.csr.pem" \
+  -CA "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem" \
+  -CAkey "${GENERATED_FILES_DIR}/certhub-lab-root-ca.key.pem" \
+  -CAcreateserial \
+  -sha256 \
+  -not_before "$SERVER_NOT_BEFORE" \
+  -not_after "$SERVER_NOT_AFTER" \
+  -extfile "${CERTIFICATES_DIR}/localhost.ext.cnf" \
+  -extensions server_certificate \
+  -out "${GENERATED_FILES_DIR}/localhost.cert.pem"
+
+print_step "Validating generated server certificate."
+
+openssl verify \
+  -CAfile "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem" \
+  -purpose sslserver \
+  -verify_hostname localhost \
+  "${GENERATED_FILES_DIR}/localhost.cert.pem"
+
+print_step "Issuing already expired server certificate"
+echo "Use CA private key passphrase."
+
+openssl x509 \
+  -req \
+  -in "${GENERATED_FILES_DIR}/localhost.csr.pem" \
+  -CA "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem" \
+  -CAkey "${GENERATED_FILES_DIR}/certhub-lab-root-ca.key.pem" \
+  -CAcreateserial \
+  -sha256 \
+  -not_before "$EXPIRED_NOT_BEFORE" \
+  -not_after "$EXPIRED_NOT_AFTER" \
+  -extfile "${CERTIFICATES_DIR}/localhost.ext.cnf" \
+  -extensions server_certificate \
+  -out "${GENERATED_FILES_DIR}/localhost-expired.cert.pem"
+
+print_step "Validating generated expired server certificate."
+
+if expired_verification="$(openssl verify \
+  -CAfile "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem" \
+  -purpose sslserver \
+  -verify_hostname localhost \
+  "${GENERATED_FILES_DIR}/localhost-expired.cert.pem" 2>&1)"; then
+    echo "Expected expired certificate rejection, but verification succeeded." >&2
+    exit 1
+fi
+
+if [[ "$expired_verification" != *"error 10 at 0 depth lookup: certificate has expired"* ]]; then
+  echo "Unexpected validation result: $expired_verification" >&2
+  exit 1
+fi
+
+echo "Expected expiry rejection confirmed." 
+printf '\n%s\n\n' "$expired_verification"
+
+print_step "Bundling the server certificate and its private key into a PKCS#12 file"
+echo "OpenSSL asks for the existing server private key passphrase, followed by a PFX export password.
+Please use the same PFX export password in the next step for the expired server certificate."
+
+openssl pkcs12 \
+  -export \
+  -inkey "${GENERATED_FILES_DIR}/localhost.key.pem" \
+  -in "${GENERATED_FILES_DIR}/localhost.cert.pem" \
+  -name "CertHub Lab Server" \
+  -out "${GENERATED_FILES_DIR}/localhost.pfx"
+
+print_step "Bundling the expired server certificate and its private key into a PKCS#12 file"
+echo "OpenSSL asks for the existing server private key passphrase, followed by a PFX export password.
+Please use the same PFX export password as in the previous step for the non-expired server certificate."
+
+openssl pkcs12 \
+  -export \
+  -inkey "${GENERATED_FILES_DIR}/localhost.key.pem" \
+  -in "${GENERATED_FILES_DIR}/localhost-expired.cert.pem" \
+  -name "CertHub Lab Server" \
+  -out "${GENERATED_FILES_DIR}/localhost-expired.pfx"
+
+# To allow Docker container to read the certificate bundles, change permissions to 644 (-rw-r--r-)
+chmod 644 "${GENERATED_FILES_DIR}/localhost.pfx" "${GENERATED_FILES_DIR}/localhost-expired.pfx"
+
+print_step "Certificate creation completed"
+
+echo "The following generated files can be found under ${GENERATED_FILES_DIR}:"
+echo "- ${GENERATED_FILES_DIR}/localhost.pfx"
+echo "- ${GENERATED_FILES_DIR}/localhost-expired.pfx"
+printf "\nPlease set CERTHUB_LAB_PFX_PASSWORD environment variable to your PFX export password and export it."

@@ -10,11 +10,11 @@ Demonstrate rejection of an expired server certificate while preserving certific
 - Clients: curl on the host machine and the CertHub API running on the host machine.
 - Target endpoint: `https://localhost:8443/`.
 - Certificate authority: the existing locally generated CertHub Lab Root CA.
-- Server certificate: a separate CA-issued certificate with `DNS:localhost` in its Subject Alternative Name, valid from 10 October 2026 until 11 October 2026 UTC.
+- Server certificate: a separate CA-issued certificate with `DNS:localhost` in its Subject Alternative Name, generated with a validity window from two days ago until one day ago.
 - Trust: curl receives the root CA's public certificate through `--cacert`; CertHub uses the same CA through custom-root trust. The lab CA is not added to the machine's system trust store. The separate ASP.NET Core development certificate is trusted for HTTPS requests to the API.
 - Authentication: server TLS only; no client certificate is requested.
 
-The lab CA is valid from 7 October 2026 at 04:20:38 UTC until 7 October 2027 at 04:20:38 UTC. Run this scenario while the CA remains valid and after the server certificate has expired. If regenerating the CA, choose a new expired server-certificate validity window inside that CA's lifetime.
+The generator backdates the CA by seven days so the expired server certificate's validity window fits inside its lifetime. Run the scenario while the CA remains valid. The fixed October 2026 dates in the evidence section describe the original run; newly generated certificates use dates relative to generation time.
 
 The existing valid server certificate and `localhost.pfx` are preserved. This scenario uses `localhost-expired.cert.pem` and `localhost-expired.pfx` instead.
 
@@ -33,37 +33,19 @@ HTTP `200` from CertHub means that it returned a diagnostic report, not that the
 
 Run commands from the repository root unless stated otherwise.
 
-### 1. Generate the expired server certificate
+### 1. Prepare the generated certificate set
 
-Prerequisites: OpenSSL 3.6, the existing lab CA certificate and private key, the localhost CSR and matching private key, and `lab/certificates/localhost.ext.cnf`.
-
-Inspect the CA's validity before signing:
+Follow the [lab setup guide](../README.md) for prerequisites, password prompts and output handling. From a fresh clone, generate the certificate set from the repository root:
 
 ```bash
-openssl x509 \
-  -in lab/certificates/generated/certhub-lab-root-ca.cert.pem \
-  -noout -dates
+bash lab/scripts/generate-certificates.sh
 ```
 
-Issue a separate certificate using explicit historical UTC dates:
+The script creates both `localhost.pfx` and `localhost-expired.pfx`, sharing the server key and hostname but using different validity windows. Use the same PFX export password for both when prompted, then supply it through `CERTHUB_LAB_PFX_PASSWORD` as described in the setup guide.
 
-```bash
-openssl x509 -req \
-  -in lab/certificates/generated/localhost.csr.pem \
-  -CA lab/certificates/generated/certhub-lab-root-ca.cert.pem \
-  -CAkey lab/certificates/generated/certhub-lab-root-ca.key.pem \
-  -CAcreateserial \
-  -sha256 \
-  -not_before 20261010000000Z \
-  -not_after 20261011000000Z \
-  -extfile lab/certificates/localhost.ext.cnf \
-  -extensions server_certificate \
-  -out lab/certificates/generated/localhost-expired.cert.pem
-```
+If a suitable generated set already exists, reuse it. Do not rerun the generator or overwrite the valid certificate merely to select the expired scenario. Keep generated material under the ignored directory and passwords out of recorded evidence.
 
-This controlled lab scenario reuses the localhost key and CSR. It does not replace the existing valid certificate.
-
-Inspect the issued certificate:
+Inspect the expired certificate if needed:
 
 ```bash
 openssl x509 \
@@ -71,7 +53,7 @@ openssl x509 \
   -noout -subject -issuer -dates -ext subjectAltName
 ```
 
-Verify it against the trusted lab CA and intended hostname:
+The generator already checks valid-certificate acceptance and the expected expiry failure. To repeat the latter independently:
 
 ```bash
 openssl verify \
@@ -81,22 +63,9 @@ openssl verify \
   lab/certificates/generated/localhost-expired.cert.pem
 ```
 
-Verification failure is expected: the server certificate has expired.
+Expect a nonzero exit with `error 10 at 0 depth lookup: certificate has expired`.
 
-### 2. Package the certificate and key
-
-```bash
-openssl pkcs12 -export \
-  -inkey lab/certificates/generated/localhost.key.pem \
-  -in lab/certificates/generated/localhost-expired.cert.pem \
-  -out lab/certificates/generated/localhost-expired.pfx
-```
-
-OpenSSL prompts for the private-key passphrase and a PFX export password. Supply that export password through `CERTHUB_LAB_PFX_PASSWORD` in the terminal used to run Compose. Keep passwords out of committed files and recorded evidence.
-
-Generated certificates, keys and PFX files remain under the ignored `lab/certificates/generated/` directory.
-
-### 3. Select the expired-certificate override
+### 2. Select the expired-certificate override
 
 The [`lab/compose.expired.yaml`](../compose.expired.yaml) override replaces the `tls-server` volume at `/certificates/localhost.pfx` with the source `./certificates/generated/localhost-expired.pfx`, using a read-only bind mount and `create_host_path: false`.
 
@@ -129,7 +98,7 @@ docker compose \
   logs tls-server
 ```
 
-### 4. Verify rejection with curl
+### 3. Verify rejection with curl
 
 ```bash
 curl \
@@ -145,7 +114,7 @@ Record the certificate-expiry error and exit code. Do not use `--insecure`, whic
 
 The base Compose file publishes IPv4 loopback only. An initial refusal on `::1`, followed by connection to `127.0.0.1`, is separate from the certificate-expiry failure.
 
-### 5. Run the diagnostic through CertHub
+### 4. Run the diagnostic through CertHub
 
 Retain the shared Development allowlist entry for `localhost:8443`. Configure the machine-specific trust settings through .NET User Secrets rather than editing the tracked `appsettings.Development.json` file.
 
@@ -180,6 +149,8 @@ curl --silent --show-error --noproxy '*' \
 Requests to the API use the trusted ASP.NET Core development certificate. If curl cannot validate that certificate, run `dotnet dev-certs https --trust`, approve the macOS prompt and restart the API. The probe's custom-root settings apply to the target connection, not the connection from curl to the API.
 
 ## Evidence
+
+The following records the original checks on 25 October 2026. Preserve it as observed evidence; certificates produced by the generator will have different dates and fingerprints.
 
 ### Completed: certificate inspection
 
@@ -292,7 +263,7 @@ Ensure `CERTHUB_LAB_PFX_PASSWORD` now matches the valid PFX's export password, t
 docker compose -f lab/compose.yaml up -d
 ```
 
-Keep the API's custom-root trust settings unchanged and repeat the diagnostic request from step 5.
+Keep the API's custom-root trust settings unchanged and repeat the diagnostic request from step 4.
 
 ### Completed: recovery verification - 25 October 2026
 
