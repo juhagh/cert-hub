@@ -36,6 +36,10 @@ if [[ -e "$GENERATED_FILES_DIR" || -L "$GENERATED_FILES_DIR" ]]; then
   exit 1
 fi
 
+print_step() {
+  printf '\n=== %s ===\n\n' "$1"
+}
+
 format_certificate_date() {
   local platform
   platform=$(uname -s)
@@ -65,7 +69,8 @@ if ! mkdir "$GENERATED_FILES_DIR"; then
   exit 1
 fi
 
-echo "Generating root CA private-key: certhub-lab-root-ca.key.pem."
+print_step "Generating root CA private-key"
+echo "Choose CA private key passphrase."
 
 openssl genpkey \
   -algorithm RSA \
@@ -73,7 +78,8 @@ openssl genpkey \
   -aes-256-cbc \
   -out "${GENERATED_FILES_DIR}/certhub-lab-root-ca.key.pem"
 
-echo "Creating the root CA's self-signed certificate: certhub-lab-root-ca.cert.pem."
+print_step "Creating the root CA's self-signed certificate"
+echo "Use CA private key passphrase."
 
 openssl x509 \
   -new \
@@ -86,7 +92,8 @@ openssl x509 \
   -extensions root_ca \
   -out "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem"
 
-echo "Generating the server private key: localhost.key.pem. Choose its passphrase."
+print_step "Generating the server private key"
+echo "Choose server private key passphrase."
 
 openssl genpkey \
   -algorithm RSA \
@@ -94,7 +101,8 @@ openssl genpkey \
   -aes-256-cbc \
   -out "${GENERATED_FILES_DIR}/localhost.key.pem"
 
-echo "Creating server certificate signing request: localhost.csr.pem."
+print_step "Creating server certificate signing request"
+echo "Use server private key passphrase."
 
 openssl req \
   -new \
@@ -104,7 +112,8 @@ openssl req \
   -addext "subjectAltName=DNS:localhost" \
   -out "${GENERATED_FILES_DIR}/localhost.csr.pem"
 
-echo "Issuing server certificate: localhost.cert.pem."
+print_step "Issuing server certificate"
+echo "Use CA private key passphrase."
 
 openssl x509 \
   -req \
@@ -119,7 +128,7 @@ openssl x509 \
   -extensions server_certificate \
   -out "${GENERATED_FILES_DIR}/localhost.cert.pem"
 
-echo "Validating generated server certificate."
+print_step "Validating generated server certificate."
 
 openssl verify \
   -CAfile "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem" \
@@ -127,7 +136,8 @@ openssl verify \
   -verify_hostname localhost \
   "${GENERATED_FILES_DIR}/localhost.cert.pem"
 
-echo "Issuing already expired server certificate: localhost-expired.cert.pem."
+print_step "Issuing already expired server certificate"
+echo "Use CA private key passphrase."
 
 openssl x509 \
   -req \
@@ -142,7 +152,7 @@ openssl x509 \
   -extensions server_certificate \
   -out "${GENERATED_FILES_DIR}/localhost-expired.cert.pem"
 
-echo "Validating generated expired server certificate."
+print_step "Validating generated expired server certificate."
 
 if expired_verification="$(openssl verify \
   -CAfile "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem" \
@@ -158,11 +168,12 @@ if [[ "$expired_verification" != *"error 10 at 0 depth lookup: certificate has e
   exit 1
 fi
 
-echo "Expected expiry rejection confirmed. $expired_verification"
+echo "Expected expiry rejection confirmed." 
+printf '\n%s\n\n' "$expired_verification"
 
-echo "Bundling the server certificate and its private key into a PKCS#12 file: localhost.pfx.
-OpenSSL asks for the existing server-key passphrase, followed by a PFX export password.
-Please use the same password in the next step for the expired server certificate."
+print_step "Bundling the server certificate and its private key into a PKCS#12 file"
+echo "OpenSSL asks for the existing server private key passphrase, followed by a PFX export password.
+Please use the same PFX export password in the next step for the expired server certificate."
 
 openssl pkcs12 \
   -export \
@@ -171,9 +182,9 @@ openssl pkcs12 \
   -name "CertHub Lab Server" \
   -out "${GENERATED_FILES_DIR}/localhost.pfx"
 
-echo "Bundling the expired server certificate and its private key into a PKCS#12 file: localhost-expired.pfx.
-OpenSSL asks for the existing server-key passphrase, followed by a PFX export password.
-Please use the same password as in the previous step for the non-expired server certificate."
+print_step "Bundling the expired server certificate and its private key into a PKCS#12 file"
+echo "OpenSSL asks for the existing server private key passphrase, followed by a PFX export password.
+Please use the same PFX export password as in the previous step for the non-expired server certificate."
 
 openssl pkcs12 \
   -export \
@@ -185,3 +196,9 @@ openssl pkcs12 \
 # To allow Docker container to read the certificate bundles, change permissions to 644 (-rw-r--r-)
 chmod 644 "${GENERATED_FILES_DIR}/localhost.pfx" "${GENERATED_FILES_DIR}/localhost-expired.pfx"
 
+print_step "Certificate creation completed"
+
+echo "The following generated files can be found under ${GENERATED_FILES_DIR}:"
+echo "- ${GENERATED_FILES_DIR}/localhost.pfx"
+echo "- ${GENERATED_FILES_DIR}/localhost-expired.pfx"
+printf "\nPlease set CERTHUB_LAB_PFX_PASSWORD environment variable to your PFX export password and export it."
