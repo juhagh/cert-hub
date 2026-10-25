@@ -26,6 +26,11 @@ if [[ ! -f "${CERTIFICATES_DIR}/localhost.ext.cnf" || ! -r "${CERTIFICATES_DIR}/
   exit 1
 fi
 
+if [[ ! -f "${CERTIFICATES_DIR}/root-ca.ext.cnf" || ! -r "${CERTIFICATES_DIR}/root-ca.ext.cnf" ]]; then
+  echo "Root CA extension file is missing or unreadable: ${CERTIFICATES_DIR}/root-ca.ext.cnf" >&2
+  exit 1
+fi
+
 if [[ -e "$GENERATED_FILES_DIR" || -L "$GENERATED_FILES_DIR" ]]; then
   echo "$GENERATED_FILES_DIR already exists, please rename or move the directory before generating a new set of files." >&2
   exit 1
@@ -53,3 +58,30 @@ SERVER_NOT_BEFORE="$(format_certificate_date "$((GENERATION_TIMESTAMP - 5 * 60))
 SERVER_NOT_AFTER="$(format_certificate_date "$((GENERATION_TIMESTAMP + 90 * 24 * 60 * 60))")"
 EXPIRED_NOT_BEFORE="$(format_certificate_date "$((GENERATION_TIMESTAMP - 2 * 24 * 60 * 60))")"
 EXPIRED_NOT_AFTER="$(format_certificate_date "$((GENERATION_TIMESTAMP - 24 * 60 * 60))")"
+
+umask 077
+if ! mkdir "$GENERATED_FILES_DIR"; then
+  echo "Failed to create $GENERATED_FILES_DIR directory" >&2
+  exit 1
+fi
+
+echo "Generating root CA private-key."
+
+openssl genpkey \
+  -algorithm RSA \
+  -pkeyopt rsa_keygen_bits:3072 \
+  -aes-256-cbc \
+  -out "${GENERATED_FILES_DIR}/certhub-lab-root-ca.key.pem"
+
+echo "Creating the root CA's self-signed certificate."
+
+openssl x509 \
+  -new \
+  -key "${GENERATED_FILES_DIR}/certhub-lab-root-ca.key.pem" \
+  -subj "/CN=CertHub Lab Root CA" \
+  -sha256 \
+  -not_before "$CA_NOT_BEFORE" \
+  -not_after "$CA_NOT_AFTER" \
+  -extfile "${CERTIFICATES_DIR}/root-ca.ext.cnf" \
+  -extensions root_ca \
+  -out "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem"
