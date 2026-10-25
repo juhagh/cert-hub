@@ -86,6 +86,7 @@ A separate Docker-based lab provides controlled scenarios for learning and inves
 - [Valid server TLS](lab/scenarios/01-valid-server-tls.md)
 - [Untrusted certificate authority](lab/scenarios/02-untrusted-ca.md)
 - [Hostname mismatch](lab/scenarios/03-hostname-mismatch.md)
+- [Expired server certificate and recovery](lab/scenarios/04-expired-server-certificate.md)
 
 The lab uses a locally generated root CA and server certificate. Generated certificates, private keys and PFX files are excluded from Git and the Docker build context. The server certificate is mounted read-only at runtime, and its password is supplied through the `CERTHUB_LAB_PFX_PASSWORD` environment variable.
 
@@ -95,7 +96,9 @@ Once the generated certificate and password are available, start the lab from th
 docker compose -f lab/compose.yaml up --build -d
 ```
 
-The lab is separate from the integration-test servers. Expired and not-yet-valid certificates are covered by integration tests; corresponding Docker lab scenarios and mTLS lab scenarios remain planned.
+The expired-certificate scenario uses `lab/compose.expired.yaml` alongside the base configuration to select a separate expired PFX without replacing the valid certificate. It records OpenSSL verification, curl rejection, the CertHub API's `CERT_EXPIRED` report and successful recovery after restoring the valid PFX under the same custom-root trust configuration. See the scenario guide for certificate generation, configuration, execution and cleanup commands.
+
+The lab is separate from the integration-test servers. Both expired and not-yet-valid certificates are covered by integration tests. Docker lab scenarios for not-yet-valid certificates and mTLS remain planned.
 
 ## Architecture
 
