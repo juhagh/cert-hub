@@ -65,7 +65,7 @@ if ! mkdir "$GENERATED_FILES_DIR"; then
   exit 1
 fi
 
-echo "Generating root CA private-key."
+echo "Generating root CA private-key: certhub-lab-root-ca.key.pem."
 
 openssl genpkey \
   -algorithm RSA \
@@ -73,7 +73,7 @@ openssl genpkey \
   -aes-256-cbc \
   -out "${GENERATED_FILES_DIR}/certhub-lab-root-ca.key.pem"
 
-echo "Creating the root CA's self-signed certificate."
+echo "Creating the root CA's self-signed certificate: certhub-lab-root-ca.cert.pem."
 
 openssl x509 \
   -new \
@@ -85,3 +85,51 @@ openssl x509 \
   -extfile "${CERTIFICATES_DIR}/root-ca.ext.cnf" \
   -extensions root_ca \
   -out "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem"
+
+echo "Generating the server private key: localhost.key.pem. Choose its passphrase."
+
+openssl genpkey \
+  -algorithm RSA \
+  -pkeyopt rsa_keygen_bits:3072 \
+  -aes-256-cbc \
+  -out "${GENERATED_FILES_DIR}/localhost.key.pem"
+
+echo "Creating server certificate signing request: localhost.csr.pem."
+
+openssl req \
+  -new \
+  -key "${GENERATED_FILES_DIR}/localhost.key.pem" \
+  -subj "/CN=localhost" \
+  -sha256 \
+  -addext "subjectAltName=DNS:localhost" \
+  -out "${GENERATED_FILES_DIR}/localhost.csr.pem"
+
+echo "Issuing server certificate: localhost.cert.pem."
+
+openssl x509 \
+  -req \
+  -in "${GENERATED_FILES_DIR}/localhost.csr.pem" \
+  -CA "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem" \
+  -CAkey "${GENERATED_FILES_DIR}/certhub-lab-root-ca.key.pem" \
+  -CAcreateserial \
+  -sha256 \
+  -not_before "$SERVER_NOT_BEFORE" \
+  -not_after "$SERVER_NOT_AFTER" \
+  -extfile "${CERTIFICATES_DIR}/localhost.ext.cnf" \
+  -extensions server_certificate \
+  -out "${GENERATED_FILES_DIR}/localhost.cert.pem"
+
+echo "Issuing already expired server certificate: localhost-expired.cert.pem."
+
+openssl x509 \
+  -req \
+  -in "${GENERATED_FILES_DIR}/localhost.csr.pem" \
+  -CA "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem" \
+  -CAkey "${GENERATED_FILES_DIR}/certhub-lab-root-ca.key.pem" \
+  -CAcreateserial \
+  -sha256 \
+  -not_before "$EXPIRED_NOT_BEFORE" \
+  -not_after "$EXPIRED_NOT_AFTER" \
+  -extfile "${CERTIFICATES_DIR}/localhost.ext.cnf" \
+  -extensions server_certificate \
+  -out "${GENERATED_FILES_DIR}/localhost-expired.cert.pem"
