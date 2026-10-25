@@ -1,0 +1,9 @@
+services:
+  tls-server:
+    volumes:
+      - type: bind
+        source: ./certificates/generated/localhost-expired.pfx
+        target: /certificates/localhost.pfx
+        bind:
+          create_host_path: false
+        read_only: true
