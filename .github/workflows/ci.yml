@@ -30,4 +30,6 @@ jobs:
         run: dotnet build CertHub.slnx --no-restore --configuration Release
         
       - name: Run tests
-        run: dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj --no-build --no-restore --configuration Release
+        run: |
+          dotnet test tests/CertHub.Domain.Tests/CertHub.Domain.Tests.csproj --no-build --no-restore --configuration Release
+          dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj --no-build --no-restore --configuration Release

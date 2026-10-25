@@ -110,6 +110,21 @@ A failed address attempt can produce a finding even when a later address connect
 
 Use finding codes for identification and messages for explanatory details. Platform error wording and chain-status details can vary. See the [diagnostic report design](../architecture/diagnostic-report.md) for the report model.
 
+### Certificate validity findings
+
+When a server certificate is available, CertHub compares its validity dates with `trustContext.evaluationTime`, the same timestamp used for the chain policy's verification time.
+
+| Finding code | Condition | Message |
+|---|---|---|
+| `CERT_EXPIRED` | Evaluation time is after the certificate's `notAfter`. | The server certificate has expired. |
+| `CERT_NOT_YET_VALID` | Evaluation time is before the certificate's `notBefore`. | The server certificate is not yet valid. |
+
+Equality at either boundary produces no date-based finding. A certificate within its validity window can still fail validation for another reason, such as hostname mismatch or an untrusted chain. No date-based finding is produced when certificate evidence is unavailable.
+
+These findings describe the server certificate, not the validity of every certificate in its chain. They supplement `CERT_CHAIN_INVALID` and its platform details rather than replacing them. For example, an expired server certificate can produce `CERT_EXPIRED`, a `CERT_CHAIN_INVALID` finding containing `NotTimeValid`, and `TLS_AUTHENTICATION_FAILED`.
+
+TLS acceptance remains governed by certificate validation. The date evaluator adds explanations without overriding the validation callback's decision. Clients can use the dedicated codes to distinguish server certificate expiry from a certificate that has not yet become valid, without parsing platform error messages.
+
 ### 400 Bad Request: invalid input
 
 Invalid fields produce a validation problem response. For an empty hostname and port `0`:
@@ -188,9 +203,10 @@ This milestone is intended for controlled local targets. The API has no authenti
 
 ## Verification
 
-Endpoint integration tests use an in-process API and a stub probe to verify invalid input, denied targets and successful report responses, including enum serialization and probe invocation. Separate probe integration tests exercise real loopback TCP/TLS connections with temporary certificates, custom trust, validation failures, cancellation, timeouts and invalid configuration.
+Endpoint integration tests use an in-process API and a stub probe to verify invalid input, denied targets and successful report responses, including enum serialization and probe invocation. Separate probe integration tests exercise real loopback TCP/TLS connections with temporary certificates, custom trust, validation failures, cancellation, timeouts and invalid configuration. Expired and not-yet-valid server certificate tests verify the dedicated validity findings while retaining certificate evidence and chain-validation details. Domain tests use fixed timestamps to verify the date rules, including equality at both validity boundaries.
 
 ```bash
+dotnet test tests/CertHub.Domain.Tests/CertHub.Domain.Tests.csproj
 dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj
 ```
 
