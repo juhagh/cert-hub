@@ -147,22 +147,19 @@ The base Compose file publishes IPv4 loopback only. An initial refusal on `::1`,
 
 ### 5. Run the diagnostic through CertHub
 
-In the API's local Development configuration, retain the allowed target `localhost:8443` and configure the probe with custom-root trust:
+Retain the shared Development allowlist entry for `localhost:8443`. Configure the machine-specific trust settings through .NET User Secrets rather than editing the tracked `appsettings.Development.json` file.
 
-```json
-{
-  "TlsProbe": {
-    "Timeout": "00:00:10",
-    "TrustMode": "CustomRoots",
-    "TrustConfigurationId": "certhub-lab",
-    "RootCertificatePaths": [
-      "/absolute/path/to/CertHub/lab/certificates/generated/certhub-lab-root-ca.cert.pem"
-    ]
-  }
-}
+The API project already includes a `UserSecretsId`; initialization is not required. Run from the repository root, replacing the example path with the actual absolute path on your machine:
+
+```bash
+dotnet user-secrets set "TlsProbe:TrustMode" "CustomRoots" --project src/CertHub.Api
+dotnet user-secrets set "TlsProbe:TrustConfigurationId" "certhub-lab" --project src/CertHub.Api
+dotnet user-secrets set "TlsProbe:RootCertificatePaths:0" \
+  "/absolute/path/to/CertHub/lab/certificates/generated/certhub-lab-root-ca.cert.pem" \
+  --project src/CertHub.Api
 ```
 
-Merge this section into the existing configuration rather than replacing the whole file. Replace the example path with the actual absolute path on your machine. Keep machine-specific paths out of shared configuration commits.
+The final `:0` sets the first root-certificate path. The probe uses its default ten-second timeout. User Secrets load automatically when the API runs in Development, and their values remain outside the repository. They are not encrypted. See the [API configuration guide](../../docs/api/tls-diagnostics.md#local-lab-settings-with-user-secrets) for configuration precedence and further details.
 
 Start or restart the API so it uses the custom-root settings:
 
@@ -362,4 +359,14 @@ docker compose \
   down
 ```
 
-Compose requires `CERTHUB_LAB_PFX_PASSWORD` to be set when processing either configuration, including during cleanup. Stop the API separately if it was started for this scenario, and restore temporary local probe settings when finished. Keep machine-specific certificate paths and passwords out of shared configuration commits.
+Compose requires `CERTHUB_LAB_PFX_PASSWORD` to be set when processing either configuration, including during cleanup. User Secrets configure the API, not the Compose environment or the lab server's PFX password.
+
+Keep the API's custom-root settings unchanged until recovery verification is complete. Afterward, if these values were added only for the scenario, remove them:
+
+```bash
+dotnet user-secrets remove "TlsProbe:TrustMode" --project src/CertHub.Api
+dotnet user-secrets remove "TlsProbe:TrustConfigurationId" --project src/CertHub.Api
+dotnet user-secrets remove "TlsProbe:RootCertificatePaths:0" --project src/CertHub.Api
+```
+
+Remove any additional root-array entries or other temporary probe overrides you added. Stop the API separately if it was started for this scenario; restart it before another check if you want the configuration changes applied. With no other trust overrides, the probe returns to system trust. Generated certificates remain available for later lab runs; cleanup does not delete them.
