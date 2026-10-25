@@ -174,20 +174,33 @@ The base configuration has an empty allowlist, which denies all targets. Develop
 
 The probe reads the `TlsProbe` section. Its default trust mode is `System` and its default overall timeout is ten seconds. The configured timeout must be greater than zero and no more than sixty seconds.
 
-For the lab, custom-root trust can be configured with the root CA's public certificate:
+### Local lab settings with User Secrets
 
-```json
-{
-  "TlsProbe": {
-    "Timeout": "00:00:10",
-    "TrustMode": "CustomRoots",
-    "TrustConfigurationId": "certhub-lab",
-    "RootCertificatePaths": [
-      "/absolute/path/to/CertHub/lab/certificates/generated/certhub-lab-root-ca.cert.pem"
-    ]
-  }
-}
+Keep `appsettings.Development.json` tracked for shared development defaults. Configure machine-specific lab trust settings through .NET User Secrets instead of adding local certificate paths to that file.
+
+The API project includes a tracked `UserSecretsId`. You do not need to run `dotnet user-secrets init` again. The identifier associates the project with a local configuration store; the values are stored outside the repository and are not shared by Git. Each developer configures their own values. User Secrets are not encrypted and are intended for development configuration, not production credential storage.
+
+Run from the repository root, replacing the example path with your actual absolute path before executing:
+
+```bash
+dotnet user-secrets set "TlsProbe:TrustMode" "CustomRoots" --project src/CertHub.Api
+dotnet user-secrets set "TlsProbe:TrustConfigurationId" "certhub-lab" --project src/CertHub.Api
+dotnet user-secrets set "TlsProbe:RootCertificatePaths:0" \
+  "/absolute/path/to/CertHub/lab/certificates/generated/certhub-lab-root-ca.cert.pem" \
+  --project src/CertHub.Api
 ```
+
+The final `:0` identifies the first item in `RootCertificatePaths`. These commands use the default ten-second timeout; no timeout override is needed for this scenario.
+
+The API's standard configuration loads User Secrets automatically in Development, after the appsettings files. Environment variables and command-line settings can still override them. The HTTPS launch profile selects Development. Start or restart the API after changing these values:
+
+```bash
+dotnet run --project src/CertHub.Api/CertHub.Api.csproj --launch-profile https
+```
+
+Check a diagnostic report for `trustContext.mode` equal to `CustomRoots` and `configurationId` equal to `certhub-lab`. Allowlisting remains a separate setting; Development already permits `localhost:8443`.
+
+### Custom-root requirements
 
 Replace the example path with an existing certificate file accessible to the API process. Custom-root mode requires a nonempty configuration identifier other than `system`, and at least one nonblank certificate path. Every configured file must load successfully. The loader accepts a PEM or DER certificate file; private keys are not required. Relative paths resolve against the process working directory.
 
@@ -196,6 +209,20 @@ In custom-root mode, the supplied roots define the trust anchors for the check. 
 Certificate validation remains enforced in both modes. Revocation checking and automatic downloads of missing issuer certificates are disabled. A successful result therefore means acceptance under this configured policy, not a complete assessment of every certificate risk.
 
 One shared timeout covers the diagnostic stages. Timeout outcomes are returned as diagnostic reports. Caller cancellation propagates instead of being converted into a target failure. Configuration errors and unexpected application errors are not diagnostic results; the API does not yet define a dedicated response contract for them.
+
+### Return to default system trust
+
+If these settings were added only for the lab, remove the three overrides after the scenario, including any additional root-array entries you added:
+
+```bash
+dotnet user-secrets remove "TlsProbe:TrustMode" --project src/CertHub.Api
+dotnet user-secrets remove "TlsProbe:TrustConfigurationId" --project src/CertHub.Api
+dotnet user-secrets remove "TlsProbe:RootCertificatePaths:0" --project src/CertHub.Api
+```
+
+Remove any other temporary `TlsProbe` overrides you set for this exercise, then restart the API. With no custom-root settings supplied by other configuration sources, the probe returns to its default system trust. Check that the report shows `System` and configuration ID `system`. This changes the probe's trust policy; it does not remove certificates from the operating system trust store.
+
+User Secrets configure the API only. Docker Compose still obtains the lab server's PFX password from `CERTHUB_LAB_PFX_PASSWORD` in its calling environment.
 
 ## Current deployment scope
 
