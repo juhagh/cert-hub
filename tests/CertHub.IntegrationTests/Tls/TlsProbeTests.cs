@@ -730,7 +730,9 @@ public sealed class TlsProbeTests
             Assert.Contains(issuer.GetCertHashString(HashAlgorithmName.SHA256), result.TrustContext.RootSha256Fingerprints);
             Assert.Contains(result.Findings, f => f.Code == "CERT_CHAIN_INVALID" && f.Message.Contains("NotTimeValid"));
             Assert.Contains(result.Findings, f => f.Code == "TLS_AUTHENTICATION_FAILED");
+            Assert.Contains(result.Findings, f => f.Code == "CERT_EXPIRED");
             Assert.DoesNotContain(result.Findings, f => f.Code == "CERT_HOSTNAME_MISMATCH");
+            Assert.DoesNotContain(result.Findings, f => f.Code == "CERT_NOT_YET_VALID");
         }
         finally
         {
@@ -738,7 +740,7 @@ public sealed class TlsProbeTests
         }
     }
     
-        [Fact]
+    [Fact]
     public async Task ProbeAsync_WithNotYetValidTrustedServerCertificate_ReturnsValidationFailure()
     {
         using var issuer = TlsTestServer.CreateCertificateAuthority();
@@ -795,7 +797,9 @@ public sealed class TlsProbeTests
             Assert.Contains(issuer.GetCertHashString(HashAlgorithmName.SHA256), result.TrustContext.RootSha256Fingerprints);
             Assert.Contains(result.Findings, f => f.Code == "CERT_CHAIN_INVALID" && f.Message.Contains("NotTimeValid"));
             Assert.Contains(result.Findings, f => f.Code == "TLS_AUTHENTICATION_FAILED");
+            Assert.Contains(result.Findings, f => f.Code == "CERT_NOT_YET_VALID");
             Assert.DoesNotContain(result.Findings, f => f.Code == "CERT_HOSTNAME_MISMATCH");
+            Assert.DoesNotContain(result.Findings, f => f.Code == "CERT_EXPIRED");
         }
         finally
         {

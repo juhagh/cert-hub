@@ -229,7 +229,13 @@ public sealed class TlsProbe : ITlsProbe
                         using var cert = X509CertificateLoader.LoadCertificate(certBytes);
                         certificateSummary = CreateCertificateSummary(cert);
                     }
-                
+
+                    if (certificateSummary is not null)
+                    {
+                        var findings = CertificateValidityEvaluator.Evaluate(certificateSummary, attemptedAt);
+                        certificateFindings.AddRange(findings);
+                    }
+                    
                     if (sslPolicyErrors == SslPolicyErrors.None)
                     {
                         certificateValidation = CheckOutcome.Passed;
