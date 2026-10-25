@@ -119,6 +119,14 @@ openssl x509 \
   -extensions server_certificate \
   -out "${GENERATED_FILES_DIR}/localhost.cert.pem"
 
+echo "Validating generated server certificate."
+
+openssl verify \
+  -CAfile "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem" \
+  -purpose sslserver \
+  -verify_hostname localhost \
+  "${GENERATED_FILES_DIR}/localhost.cert.pem"
+
 echo "Issuing already expired server certificate: localhost-expired.cert.pem."
 
 openssl x509 \
@@ -133,3 +141,47 @@ openssl x509 \
   -extfile "${CERTIFICATES_DIR}/localhost.ext.cnf" \
   -extensions server_certificate \
   -out "${GENERATED_FILES_DIR}/localhost-expired.cert.pem"
+
+echo "Validating generated expired server certificate."
+
+if expired_verification="$(openssl verify \
+  -CAfile "${GENERATED_FILES_DIR}/certhub-lab-root-ca.cert.pem" \
+  -purpose sslserver \
+  -verify_hostname localhost \
+  "${GENERATED_FILES_DIR}/localhost-expired.cert.pem" 2>&1)"; then
+    echo "Expected expired certificate rejection, but verification succeeded." >&2
+    exit 1
+fi
+
+if [[ "$expired_verification" != *"error 10 at 0 depth lookup: certificate has expired"* ]]; then
+  echo "Unexpected validation result: $expired_verification" >&2
+  exit 1
+fi
+
+echo "Expected expiry rejection confirmed. $expired_verification"
+
+echo "Bundling the server certificate and its private key into a PKCS#12 file: localhost.pfx.
+OpenSSL asks for the existing server-key passphrase, followed by a PFX export password.
+Please use the same password in the next step for the expired server certificate."
+
+openssl pkcs12 \
+  -export \
+  -inkey "${GENERATED_FILES_DIR}/localhost.key.pem" \
+  -in "${GENERATED_FILES_DIR}/localhost.cert.pem" \
+  -name "CertHub Lab Server" \
+  -out "${GENERATED_FILES_DIR}/localhost.pfx"
+
+echo "Bundling the expired server certificate and its private key into a PKCS#12 file: localhost-expired.pfx.
+OpenSSL asks for the existing server-key passphrase, followed by a PFX export password.
+Please use the same password as in the previous step for the non-expired server certificate."
+
+openssl pkcs12 \
+  -export \
+  -inkey "${GENERATED_FILES_DIR}/localhost.key.pem" \
+  -in "${GENERATED_FILES_DIR}/localhost-expired.cert.pem" \
+  -name "CertHub Lab Server" \
+  -out "${GENERATED_FILES_DIR}/localhost-expired.pfx"
+
+# To allow Docker container to read the certificate bundles, change permissions to 644 (-rw-r--r-)
+chmod 644 "${GENERATED_FILES_DIR}/localhost.pfx" "${GENERATED_FILES_DIR}/localhost-expired.pfx"
+
