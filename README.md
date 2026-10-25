@@ -81,6 +81,8 @@ The API currently has no authentication or rate limiting. Its hostname-and-port 
 
 ## TLS Lab
 
+Start with the [TLS lab setup guide](lab/README.md) for a fresh-clone walkthrough covering prerequisites, certificate generation, password prompts, Docker startup, API trust settings and cleanup. The generator creates valid and expired certificate bundles with dates relative to generation time and refuses to overwrite existing output.
+
 A separate Docker-based lab provides controlled scenarios for learning and investigating TLS behaviour:
 
 - [Valid server TLS](lab/scenarios/01-valid-server-tls.md)
@@ -90,7 +92,7 @@ A separate Docker-based lab provides controlled scenarios for learning and inves
 
 The lab uses a locally generated root CA and server certificate. Generated certificates, private keys and PFX files are excluded from Git and the Docker build context. The server certificate is mounted read-only at runtime, and its password is supplied through the `CERTHUB_LAB_PFX_PASSWORD` environment variable.
 
-Once the generated certificate and password are available, start the lab from the repository root:
+After following the setup guide to generate certificates and set `CERTHUB_LAB_PFX_PASSWORD`, start the valid server from the repository root:
 
 ```bash
 docker compose -f lab/compose.yaml up --build -d

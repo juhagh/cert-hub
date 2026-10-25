@@ -20,7 +20,10 @@
 
 ## Run
 
-- Generate `localhost.pfx` and `certhub-lab-root-ca.cert.pem` under `lab/certificates/generated/`, then set `CERTHUB_LAB_PFX_PASSWORD` to the PFX export password. Reuse the certificates from scenario 01; no regeneration is needed.
+Follow the [lab setup guide](../README.md) to generate the certificate set and supply `CERTHUB_LAB_PFX_PASSWORD` in the terminal used for Compose. Reuse an existing generated set if the CA and valid server certificate are still valid; the generator deliberately refuses to overwrite it.
+
+Run the following commands from the repository root. Use the base Compose configuration, which mounts the valid `localhost.pfx`. If the expired override is currently running, stop it using both Compose files before switching back to the base configuration.
+
 - Validate the Compose file from the repository root
 
 ```bash
@@ -53,6 +56,8 @@ echo $?
 ```
 
 ## Evidence
+
+The following is a historical verification record. A newly generated certificate set has different validity dates and fingerprints; the recorded values are not prerequisites for this scenario.
 
 - The TCP connection succeeds over IPv4. On the tested curl backend, TLS 1.3 negotiation completes before curl reports the hostname mismatch. Curl rejects the connection before sending an HTTP request and exits with code 60.
 
