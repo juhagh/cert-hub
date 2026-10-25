@@ -15,6 +15,7 @@ Current capabilities include:
 - Reports distinguishing DNS, TCP, TLS authentication and certificate-validation outcomes.
 - Certificate subject, issuer, validity dates and SHA-256 fingerprint capture, including when validation rejects the certificate.
 - Hostname and certificate-chain validation findings with supporting platform error details.
+- Dedicated `CERT_EXPIRED` and `CERT_NOT_YET_VALID` findings based on the server certificate dates and report evaluation time.
 - Connected IP address, TCP-stage duration and negotiated TLS protocol and cipher suite when authentication succeeds.
 - A shared diagnostic timeout and propagation of caller cancellation.
 - HTTP request validation, target-policy enforcement and readable enum values in JSON responses.
@@ -32,26 +33,28 @@ Run from the repository root:
 ```bash
 dotnet restore CertHub.slnx
 dotnet build CertHub.slnx --no-restore
+dotnet test tests/CertHub.Domain.Tests/CertHub.Domain.Tests.csproj
 dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj
 ```
 
-The integration suite currently contains 71 test cases. Coverage includes:
+The Domain and integration suites currently contain 76 test cases: 5 Domain cases and 71 integration cases. Coverage includes:
 
 - DNS resolution failure, empty address results, timeout reporting and caller cancellation during resolution.
 - TCP connection refusal and fallback to a second address while preserving the first connection failure finding.
 - Probe configuration, certificate validation and evidence preservation, custom-root trust, TLS timeouts and caller cancellation.
-- Rejection of expired and not-yet-valid server certificates issued by a trusted test CA, with certificate evidence preserved.
+- Certificate-validity rules before, within and at both boundaries of the validity window.
+- Rejection of expired and not-yet-valid server certificates issued by a trusted test CA, with certificate evidence and dedicated validity findings preserved.
 - Request validation, target policy and HTTP endpoint behaviour.
 
 Tests use in-process API hosting, loopback servers, dynamically assigned ports and temporary certificates. Endpoint tests use a stub probe; connection tests exercise real TCP/TLS behaviour. Tests do not require Docker, externally hosted target services or changes to the machine's trust store.
 
-Certificate-validity tests generate server certificates with explicit validity dates and use a currently valid, trusted test CA. They verify the `NotTimeValid` chain status together with the captured certificate dates relative to the report's evaluation time, distinguishing expiry from a certificate that is not yet valid. The current report exposes these through `CERT_CHAIN_INVALID` findings and certificate metadata; dedicated expiry finding codes are not yet implemented.
+Domain tests use fixed timestamps to verify certificate-validity rules, including acceptance at the exact `NotBefore` and `NotAfter` boundaries. Integration tests generate expired and not-yet-valid server certificates under a currently valid, trusted test CA. They verify `CERT_EXPIRED` or `CERT_NOT_YET_VALID` alongside the existing `CERT_CHAIN_INVALID` finding and its `NotTimeValid` platform detail. The domain evaluator uses the report's evaluation time and adds explanatory findings without changing TLS acceptance.
 
 DNS failure, empty-result, timeout and cancellation tests use controlled implementations of `IHostResolver`, making those scenarios independent of local hosts entries, DNS caches and configured DNS servers. Production resolution uses `SystemHostResolver`, which delegates to the operating system. Other loopback connection tests continue to exercise system resolution for local addresses.
 
 The address fallback test supplies IPv6 loopback (`::1`) before IPv4 loopback (`127.0.0.1`) and connects to an IPv4-only test server. It verifies that the first connection failure remains in the report after successful TCP and TLS authentication through the second address. This test requires IPv6 support.
 
-GitHub Actions restores, builds and runs the integration suite in Release configuration on Ubuntu for pull requests targeting `main` and pushes to `main`.
+GitHub Actions restores, builds and runs both the Domain and integration suites in Release configuration on Ubuntu for pull requests targeting `main` and pushes to `main`.
 
 ## Run the API
 
@@ -100,7 +103,7 @@ The solution separates diagnostic contracts, use-case orchestration and networki
 
 | Project | Responsibility |
 |---|---|
-| `CertHub.Domain` | Diagnostic report types, outcomes and findings |
+| `CertHub.Domain` | Diagnostic report types, outcomes, findings and certificate-validity evaluation |
 | `CertHub.Application` | Diagnostic request, use case and TLS probe interface |
 | `CertHub.Infrastructure` | DNS, TCP, TLS probing and certificate evidence extraction |
 | `CertHub.Api` | HTTP endpoint, request validation, target policy and dependency composition |
