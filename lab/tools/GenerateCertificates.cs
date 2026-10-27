@@ -181,6 +181,47 @@ Console.WriteLine($"\nSubject:{expiredServerCertificate.Subject}" +
                   $"\nNotAfter: {expiredServerCertificate.NotAfter.ToUniversalTime():O}" +
                   $"\nHasPrivateKey: {expiredServerCertificate.HasPrivateKey}");
 
+var exportParameters = new PbeParameters(
+    encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
+    hashAlgorithm: HashAlgorithmName.SHA256,
+    iterationCount: 100_000);
+
+var serverPfx = serverCertificate.ExportPkcs12(exportParameters, pfxPassword);
+var expiredServerPfx = expiredServerCertificate.ExportPkcs12(exportParameters, pfxPassword);
+
+Console.WriteLine($"\nServerPfxBundleLength: {serverPfx.Length}");
+Console.WriteLine($"\nExpiredServerPfxBundleLength: {expiredServerPfx.Length}");
+
+X509KeyStorageFlags keyStorageFlags = OperatingSystem.IsMacOS() ? X509KeyStorageFlags.DefaultKeySet : X509KeyStorageFlags.EphemeralKeySet;  
+
+using var serverPkcs12Cert = X509CertificateLoader.LoadPkcs12(serverPfx, pfxPassword, keyStorageFlags);
+if (!serverPkcs12Cert.HasPrivateKey)
+{
+    Console.Error.WriteLine("Server PFX is missing private key.");
+    return 1;
+}
+
+if (issuedServerCertificate.GetCertHashString(HashAlgorithmName.SHA256) != serverPkcs12Cert.GetCertHashString(HashAlgorithmName.SHA256))
+{
+    Console.Error.WriteLine("Server certificate fingerprints do not match.");
+    return 1;
+}
+
+using var serverExpiredPkcs12Cert = X509CertificateLoader.LoadPkcs12(expiredServerPfx, pfxPassword, keyStorageFlags);
+if (!serverExpiredPkcs12Cert.HasPrivateKey)
+{
+    Console.Error.WriteLine("Expired server PFX is missing its private key.");
+    return 1;
+}
+
+if (issuedExpiredServerCertificate.GetCertHashString(HashAlgorithmName.SHA256) != serverExpiredPkcs12Cert.GetCertHashString(HashAlgorithmName.SHA256))
+{
+    Console.Error.WriteLine("Expired server certificate fingerprints do not match.");
+    return 1;
+}
+
+Console.WriteLine("\nBoth PFX bundles verified.");
+
 string ReadPassword(string prompt)
 {
     var sb = new StringBuilder();
