@@ -38,14 +38,14 @@ Run commands from the repository root unless stated otherwise.
 Follow the [lab setup guide](../README.md) for prerequisites, password prompts and output handling. From a fresh clone, generate the certificate set from the repository root:
 
 ```bash
-bash lab/scripts/generate-certificates.sh
+dotnet run --file lab/tools/GenerateCertificates.cs -- lab/certificates/generated
 ```
 
-The script creates both `localhost.pfx` and `localhost-expired.pfx`, sharing the server key and hostname but using different validity windows. Use the same PFX export password for both when prompted, then supply it through `CERTHUB_LAB_PFX_PASSWORD` as described in the setup guide.
+The script creates both `localhost.pfx` and `localhost-expired.pfx`, sharing the server key and hostname but using different validity windows. The tool applies one confirmed PFX password to both bundles. Supply that password through `CERTHUB_LAB_PFX_PASSWORD` as described in the setup guide. Its second confirmed password protects the standalone PEM keys, not the PFX bundles.
 
 If a suitable generated set already exists, reuse it. Do not rerun the generator or overwrite the valid certificate merely to select the expired scenario. Keep generated material under the ignored directory and passwords out of recorded evidence.
 
-Inspect the expired certificate if needed:
+If OpenSSL is installed, inspect the expired certificate independently:
 
 ```bash
 openssl x509 \
@@ -53,7 +53,7 @@ openssl x509 \
   -noout -subject -issuer -dates -ext subjectAltName
 ```
 
-The generator already checks valid-certificate acceptance and the expected expiry failure. To repeat the latter independently:
+The C# generator checks PFX and encrypted-key round trips; these do not perform chain or hostname validation. With optional OpenSSL, verify expiry independently:
 
 ```bash
 openssl verify \
