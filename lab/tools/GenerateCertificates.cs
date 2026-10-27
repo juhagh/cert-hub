@@ -268,13 +268,11 @@ tempCaRsaKey.ImportFromEncryptedPem(input: caKeyPem, password: keyPassword);
 using var tempServerRsaKey = RSA.Create();
 tempServerRsaKey.ImportFromEncryptedPem(input: serverKeyPem, password: keyPassword);
 
-
 if (!tempCaRsaKey.ExportSubjectPublicKeyInfo().SequenceEqual(caKey.ExportSubjectPublicKeyInfo()))
 {
     Console.Error.WriteLine("CA key SubjectPublicKeyInfo does not match the original key.");
     return 1;
 }
-
 
 if (!tempServerRsaKey.ExportSubjectPublicKeyInfo().SequenceEqual(serverKey.ExportSubjectPublicKeyInfo()))
 {
@@ -311,26 +309,51 @@ try
         Console.Error.WriteLine("Unsupported operating system.");
         return 1;
     }
-    
-    WriteNewFile(Path.Combine(stagingDirectory, "certhub-lab-root-ca.cert.pem"), Encoding.UTF8.GetBytes(caCertificatePem), false);
-    WriteNewFile(Path.Combine(stagingDirectory, "certhub-lab-root-ca.key.pem"), Encoding.UTF8.GetBytes(caKeyPem), false);
-    WriteNewFile(Path.Combine(stagingDirectory, "localhost.cert.pem"), Encoding.UTF8.GetBytes(serverCertificatePem), false);
-    WriteNewFile(Path.Combine(stagingDirectory, "localhost-expired.cert.pem"), Encoding.UTF8.GetBytes(expiredServerCertificatePem), false);
+
+    WriteNewFile(Path.Combine(stagingDirectory, "certhub-lab-root-ca.cert.pem"),
+        Encoding.UTF8.GetBytes(caCertificatePem), false);
+    WriteNewFile(Path.Combine(stagingDirectory, "certhub-lab-root-ca.key.pem"), Encoding.UTF8.GetBytes(caKeyPem),
+        false);
+    WriteNewFile(Path.Combine(stagingDirectory, "localhost.cert.pem"), Encoding.UTF8.GetBytes(serverCertificatePem),
+        false);
+    WriteNewFile(Path.Combine(stagingDirectory, "localhost-expired.cert.pem"),
+        Encoding.UTF8.GetBytes(expiredServerCertificatePem), false);
     WriteNewFile(Path.Combine(stagingDirectory, "localhost.key.pem"), Encoding.UTF8.GetBytes(serverKeyPem), false);
     WriteNewFile(Path.Combine(stagingDirectory, "localhost.csr.pem"), Encoding.UTF8.GetBytes(serverCsrPem), false);
     WriteNewFile(Path.Combine(stagingDirectory, "localhost.pfx"), serverPfx, true);
     WriteNewFile(Path.Combine(stagingDirectory, "localhost-expired.pfx"), expiredServerPfx, true);
-    
+
     Directory.Move(sourceDirName: stagingDirectory, destDirName: outputDirectory);
     stagingCreated = false;
 
     Console.WriteLine($"Certificate files are created and can be found from: {outputDirectory}");
 }
+catch (IOException ex)
+{
+    Console.Error.WriteLine($"Failed to create certificate output: {ex.Message}");
+    return 1;
+}
+catch (UnauthorizedAccessException ex)
+{
+    Console.Error.WriteLine($"Failed to create certificate output: {ex.Message}");
+    return 1;
+}
 finally
 {
-    if (stagingCreated && Path.Exists(stagingDirectory))
+    try
     {
-        Directory.Delete(stagingDirectory, recursive: true);
+        if (stagingCreated && Path.Exists(stagingDirectory))
+        {
+            Directory.Delete(stagingDirectory, recursive: true);
+        }
+    }
+    catch (IOException ex)
+    {
+        Console.Error.WriteLine($"Failed to clean up staging directory: {stagingDirectory}. Error: {ex.Message}");
+    }
+    catch (UnauthorizedAccessException ex)
+    {
+        Console.Error.WriteLine($"Failed to clean up staging directory: {stagingDirectory}. Error: {ex.Message}");
     }
 }
 
@@ -361,10 +384,12 @@ string ReadPassword(string prompt)
 
 void WriteNewFile(string path, byte[] contents, bool containerReadable)
 {
-    var options = new FileStreamOptions();
-    options.Mode = FileMode.CreateNew;
-    options.Access = FileAccess.Write;
-    options.Share = FileShare.None;
+    var options = new FileStreamOptions
+    {
+        Mode = FileMode.CreateNew,
+        Access = FileAccess.Write,
+        Share = FileShare.None
+    };
 
     if (OperatingSystem.IsMacOS() || OperatingSystem.IsLinux())
     {
@@ -377,7 +402,7 @@ void WriteNewFile(string path, byte[] contents, bool containerReadable)
             options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
         }
     }
-
+    
     using var fs = new FileStream(path, options);
     fs.Write(contents);
 }
