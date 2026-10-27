@@ -1,4 +1,4 @@
-using System.Resources;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -25,6 +25,17 @@ if (Path.Exists(outputDirectory))
     Console.Error.WriteLine($"The output directory {outputDirectory} already exists. Please move or rename it or provide alternative path.");
     return 1;
 }
+
+var parentDirectory = Directory.GetParent(outputDirectory);
+if (parentDirectory is null || !parentDirectory.Exists)
+{
+    Console.Error.WriteLine("Parent directory of output directory does not exist or is null.");
+    return 1;
+}
+
+var stagingDirectory = Path.Combine(parentDirectory.FullName , $".certhub-generation-{Guid.NewGuid():N}");
+
+Console.WriteLine($"\nStaging Directory: {stagingDirectory}");
 
 if (Console.IsInputRedirected)
 {
@@ -271,8 +282,43 @@ if (!tempServerRsaKey.ExportSubjectPublicKeyInfo().SequenceEqual(serverKey.Expor
     return 1;
 }
 
-
 Console.WriteLine("Both encrypted private-key exports verified.");
+
+bool stagingCreated = false;
+try
+{
+    if (Path.Exists(stagingDirectory))
+    {
+        Console.Error.WriteLine("Staging path already exists; refusing to reuse it.");
+        return 1;
+    }
+
+    if (OperatingSystem.IsWindows())
+    {
+        Directory.CreateDirectory(stagingDirectory);
+        stagingCreated = true;
+        Console.WriteLine($"Staging directory: {stagingDirectory} created successfully.");
+    }
+    else if (OperatingSystem.IsMacOS() || OperatingSystem.IsLinux())
+    {
+        var unixFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+        Directory.CreateDirectory(stagingDirectory, unixFileMode);
+        stagingCreated = true;
+        Console.WriteLine($"Staging directory: {stagingDirectory} created successfully.");
+    }
+    else
+    {
+        Console.Error.WriteLine("Unsupported operating system.");
+        return 1;
+    }
+}
+finally
+{
+    if (stagingCreated && Path.Exists(stagingDirectory))
+    {
+        Directory.Delete(stagingDirectory);
+    }
+}
 
 string ReadPassword(string prompt)
 {
