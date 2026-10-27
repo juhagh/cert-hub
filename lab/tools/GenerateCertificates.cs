@@ -311,12 +311,26 @@ try
         Console.Error.WriteLine("Unsupported operating system.");
         return 1;
     }
+    
+    WriteNewFile(Path.Combine(stagingDirectory, "certhub-lab-root-ca.cert.pem"), Encoding.UTF8.GetBytes(caCertificatePem), false);
+    WriteNewFile(Path.Combine(stagingDirectory, "certhub-lab-root-ca.key.pem"), Encoding.UTF8.GetBytes(caKeyPem), false);
+    WriteNewFile(Path.Combine(stagingDirectory, "localhost.cert.pem"), Encoding.UTF8.GetBytes(serverCertificatePem), false);
+    WriteNewFile(Path.Combine(stagingDirectory, "localhost-expired.cert.pem"), Encoding.UTF8.GetBytes(expiredServerCertificatePem), false);
+    WriteNewFile(Path.Combine(stagingDirectory, "localhost.key.pem"), Encoding.UTF8.GetBytes(serverKeyPem), false);
+    WriteNewFile(Path.Combine(stagingDirectory, "localhost.csr.pem"), Encoding.UTF8.GetBytes(serverCsrPem), false);
+    WriteNewFile(Path.Combine(stagingDirectory, "localhost.pfx"), serverPfx, true);
+    WriteNewFile(Path.Combine(stagingDirectory, "localhost-expired.pfx"), expiredServerPfx, true);
+    
+    Directory.Move(sourceDirName: stagingDirectory, destDirName: outputDirectory);
+    stagingCreated = false;
+
+    Console.WriteLine($"Certificate files are created and can be found from: {outputDirectory}");
 }
 finally
 {
     if (stagingCreated && Path.Exists(stagingDirectory))
     {
-        Directory.Delete(stagingDirectory);
+        Directory.Delete(stagingDirectory, recursive: true);
     }
 }
 
@@ -343,6 +357,29 @@ string ReadPassword(string prompt)
     Console.WriteLine();
 
     return sb.ToString();
+}
+
+void WriteNewFile(string path, byte[] contents, bool containerReadable)
+{
+    var options = new FileStreamOptions();
+    options.Mode = FileMode.CreateNew;
+    options.Access = FileAccess.Write;
+    options.Share = FileShare.None;
+
+    if (OperatingSystem.IsMacOS() || OperatingSystem.IsLinux())
+    {
+        if (containerReadable)
+        {
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+        }
+        else
+        {
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        }
+    }
+
+    using var fs = new FileStream(path, options);
+    fs.Write(contents);
 }
 
 return 0;
