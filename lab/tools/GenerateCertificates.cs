@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 Console.WriteLine("This is a script to create certificates necessary to run the CertHub Lab.\n");
 if (args.Length != 1)
@@ -23,6 +24,29 @@ if (Path.Exists(outputDirectory))
     Console.Error.WriteLine($"The output directory {outputDirectory} already exists. Please move or rename it or provide alternative path.");
     return 1;
 }
+
+if (Console.IsInputRedirected)
+{
+    Console.Error.WriteLine("Console input is redirected, please use interactive mode instead.");
+    return 1;
+}
+
+var pfxPassword = ReadPassword("Please enter PFX bundle password. It will be used for both of the PFX bundles: ");
+var pfxPasswordConfirmation = ReadPassword("Please confirm PFX bundle password: ");
+
+if (string.IsNullOrWhiteSpace(pfxPassword))
+{
+    Console.Error.WriteLine("Password cannot be empty.");
+    return 1;
+}
+
+if (!string.Equals(pfxPassword, pfxPasswordConfirmation, StringComparison.Ordinal))
+{
+    Console.Error.WriteLine("Passwords do not match.");
+    return 1;
+}
+
+Console.WriteLine("\nPFX password confirmed.");
 
 var generationTime = DateTimeOffset.UtcNow;
 var caNotBefore = generationTime.AddDays(-7);
@@ -73,6 +97,12 @@ caRequest.CertificateExtensions.Add(subjectKeyIdentifierExtension);
 caRequest.CertificateExtensions.Add(authorityKeyIdentifierExtension);
 
 using var caCertificate = caRequest.CreateSelfSigned(caNotBefore, caNotAfter);
+
+Console.WriteLine("\nCA Root certificate:");
+Console.WriteLine($"\nSubject: {caCertificate.Subject}," +
+                  $"\nIssuer: {caCertificate.Issuer}," +
+                  $"\nNotBefore: {caCertificate.NotBefore.ToUniversalTime():O}," +
+                  $"\nNotAfter: {caCertificate.NotAfter.ToUniversalTime():O}");
 
 // Create Server key and request
 using var serverKey = RSA.Create(3072);
@@ -151,10 +181,29 @@ Console.WriteLine($"\nSubject:{expiredServerCertificate.Subject}" +
                   $"\nNotAfter: {expiredServerCertificate.NotAfter.ToUniversalTime():O}" +
                   $"\nHasPrivateKey: {expiredServerCertificate.HasPrivateKey}");
 
-Console.WriteLine("\nCA Root certificate:");
-Console.WriteLine($"\nSubject: {caCertificate.Subject}," +
-                  $"\nIssuer: {caCertificate.Issuer}," +
-                  $"\nNotBefore: {caCertificate.NotBefore.ToUniversalTime():O}," +
-                  $"\nNotAfter: {caCertificate.NotAfter.ToUniversalTime():O}");
+string ReadPassword(string prompt)
+{
+    var sb = new StringBuilder();
+    ConsoleKeyInfo consoleKey;
+    
+    Console.Write(prompt);
+    do
+    {
+        consoleKey = Console.ReadKey(intercept: true);
+        if (!char.IsControl(consoleKey.KeyChar))
+        {
+            sb.Append(consoleKey.KeyChar);
+        }
+
+        if (consoleKey.Key == ConsoleKey.Backspace && sb.Length > 0)
+        {
+            sb.Remove(sb.Length - 1, 1);
+        }
+    } while (consoleKey.Key != ConsoleKey.Enter);
+
+    Console.WriteLine();
+
+    return sb.ToString();
+}
 
 return 0;
