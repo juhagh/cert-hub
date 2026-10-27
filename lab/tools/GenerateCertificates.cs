@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -17,8 +16,28 @@ if (string.IsNullOrWhiteSpace(args[0]))
     return 1;
 }
 
-var outputDirectory = Path.GetFullPath(args[0]);
-Console.WriteLine($"Path provided: {outputDirectory}");
+string outputDirectory;
+
+try
+{
+    outputDirectory = Path.GetFullPath(args[0]);
+    Console.WriteLine($"Path provided: {outputDirectory}");
+}
+catch (IOException ex)
+{
+    Console.Error.WriteLine($"Failed to construct output directory path: {ex.Message}");
+    return 1;
+}
+catch (UnauthorizedAccessException ex)
+{
+    Console.Error.WriteLine($"Failed to construct output directory path: {ex.Message}");
+    return 1;
+}
+catch (ArgumentException ex)
+{
+    Console.Error.WriteLine($"Failed to construct output directory path: {ex.Message}");
+    return 1;
+}
 
 if (Path.Exists(outputDirectory))
 {
@@ -323,6 +342,14 @@ try
     WriteNewFile(Path.Combine(stagingDirectory, "localhost.pfx"), serverPfx, true);
     WriteNewFile(Path.Combine(stagingDirectory, "localhost-expired.pfx"), expiredServerPfx, true);
 
+    if (OperatingSystem.IsMacOS() || OperatingSystem.IsLinux())
+    {
+        var pfxUnixFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead |
+                              UnixFileMode.OtherRead;
+        File.SetUnixFileMode(Path.Combine(stagingDirectory, "localhost.pfx"), pfxUnixFileMode);
+        File.SetUnixFileMode(Path.Combine(stagingDirectory, "localhost-expired.pfx"), pfxUnixFileMode);
+    }
+    
     Directory.Move(sourceDirName: stagingDirectory, destDirName: outputDirectory);
     stagingCreated = false;
 
