@@ -1,3 +1,4 @@
+using System.Resources;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -31,7 +32,7 @@ if (Console.IsInputRedirected)
     return 1;
 }
 
-var pfxPassword = ReadPassword("Please enter PFX bundle password. It will be used for both of the PFX bundles: ");
+var pfxPassword = ReadPassword("\nPlease enter PFX bundle password. It will be used for both of the PFX bundles: ");
 var pfxPasswordConfirmation = ReadPassword("Please confirm PFX bundle password: ");
 
 if (string.IsNullOrWhiteSpace(pfxPassword))
@@ -47,6 +48,26 @@ if (!string.Equals(pfxPassword, pfxPasswordConfirmation, StringComparison.Ordina
 }
 
 Console.WriteLine("\nPFX password confirmed.");
+
+var keyPassword =
+    ReadPassword(
+        "\nPlease enter private key password. This password will protect both standalone CA and server PEM keys: ");
+
+var keyPasswordConfirmation = ReadPassword("Please confirm private key password: ");
+
+if (string.IsNullOrWhiteSpace(keyPassword))
+{
+    Console.Error.WriteLine("Password cannot be empty.");
+    return 1;
+}
+
+if (!string.Equals(keyPassword, keyPasswordConfirmation, StringComparison.Ordinal))
+{
+    Console.Error.WriteLine("Passwords do not match.");
+    return 1;
+}
+
+Console.WriteLine("\nPrivate key password confirmed.");
 
 var generationTime = DateTimeOffset.UtcNow;
 var caNotBefore = generationTime.AddDays(-7);
@@ -221,6 +242,37 @@ if (issuedExpiredServerCertificate.GetCertHashString(HashAlgorithmName.SHA256) !
 }
 
 Console.WriteLine("\nBoth PFX bundles verified.");
+
+var caCertificatePem = caCertificate.ExportCertificatePem();
+var serverCertificatePem = serverCertificate.ExportCertificatePem();
+var expiredServerCertificatePem = expiredServerCertificate.ExportCertificatePem();
+var serverCsrPem = serverRequest.CreateSigningRequestPem();
+
+var caKeyPem = caKey.ExportEncryptedPkcs8PrivateKeyPem(keyPassword, exportParameters);
+var serverKeyPem = serverKey.ExportEncryptedPkcs8PrivateKeyPem(keyPassword, exportParameters);
+
+using var tempCaRsaKey = RSA.Create();
+tempCaRsaKey.ImportFromEncryptedPem(input: caKeyPem, password: keyPassword);
+
+using var tempServerRsaKey = RSA.Create();
+tempServerRsaKey.ImportFromEncryptedPem(input: serverKeyPem, password: keyPassword);
+
+
+if (!tempCaRsaKey.ExportSubjectPublicKeyInfo().SequenceEqual(caKey.ExportSubjectPublicKeyInfo()))
+{
+    Console.Error.WriteLine("CA key SubjectPublicKeyInfo does not match the original key.");
+    return 1;
+}
+
+
+if (!tempServerRsaKey.ExportSubjectPublicKeyInfo().SequenceEqual(serverKey.ExportSubjectPublicKeyInfo()))
+{
+    Console.Error.WriteLine("Server key SubjectPublicKeyInfo does not match the original key.");
+    return 1;
+}
+
+
+Console.WriteLine("Both encrypted private-key exports verified.");
 
 string ReadPassword(string prompt)
 {
