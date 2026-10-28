@@ -32,7 +32,7 @@ dotnet run --file lab/tools/GenerateCertificates.cs -- lab/certificates/generate
 
 The output directory is the app's single required argument. Relative paths resolve against the caller's working directory; absolute output paths are also supported. Its parent directory must already exist. The tool refuses existing output paths before prompting or generating keys, including existing symbolic links.
 
-The tool prepares and verifies exports before writing eight files into a uniquely named sibling staging directory. Only after writing succeeds does it move staging to the requested output path. File writes use create-new semantics; if publication fails, the tool attempts to clean up staging and reports any cleanup failure. It does not overwrite your previous lab material.
+The tool prepares and verifies exports before writing eleven files into a uniquely named sibling staging directory. Only after writing succeeds does it move staging to the requested output path. File writes use create-new semantics; if publication fails, the tool attempts to clean up staging and reports any cleanup failure. It does not overwrite your previous lab material.
 
 Stop running lab containers before moving an existing generated directory aside; retain it privately outside the repository if needed. Do not move private keys into an unignored repository folder. Output paths outside `lab/certificates/generated/` are not automatically covered by the repository's ignore rule.
 
@@ -44,12 +44,12 @@ The C# tool asks for two passwords, each entered twice for confirmation:
 
 | Password | Protects | Used again for |
 |---|---|---|
-| PFX bundle password | Both `localhost.pfx` and `localhost-expired.pfx` | `CERTHUB_LAB_PFX_PASSWORD` for Compose |
-| Standalone key password | Both CA and server encrypted PEM private-key exports | Decrypting those PEM keys for later inspection or signing |
+| PFX bundle password | `localhost.pfx`, `localhost-expired.pfx` and `client.pfx` | `CERTHUB_LAB_PFX_PASSWORD` for Compose |
+| Standalone key password | CA, server and client encrypted PEM private-key exports | Decrypting those PEM keys for later inspection or signing |
 
 Both passwords must be nonblank and match their confirmations. Input is hidden, and Backspace is supported. Redirected standard input is rejected because the tool requires an interactive terminal. Neither password is printed or written into source/configuration files.
 
-The same confirmed PFX password is applied programmatically to both bundles. Unlike the earlier shell workflow, you do not need to enter CA-key and server-key passphrases repeatedly during issuance: the keys are generated and used in memory, then their standalone exports are encrypted.
+The same confirmed PFX password is applied programmatically to all three bundles. Unlike the earlier shell workflow, you do not need to enter CA-key and server-key passphrases repeatedly during issuance: the keys are generated and used in memory, then their standalone exports are encrypted.
 
 ### Generated material
 
@@ -63,6 +63,9 @@ The same confirmed PFX password is applied programmatically to both bundles. Unl
 | `localhost-expired.cert.pem` | Expired CA-issued server certificate |
 | `localhost.pfx` | Valid server certificate and private key for the container |
 | `localhost-expired.pfx` | Expired server certificate and private key for the container |
+| `client.cert.pem` | CA-issued client certificate for mTLS |
+| `client.key.pem` | Encrypted client private key |
+| `client.pfx` | Client certificate and private key for curl |
 
 Validity periods are calculated from one captured generation time:
 
@@ -71,14 +74,15 @@ Validity periods are calculated from one captured generation time:
 | Lab CA | Seven days before generation | 365 days after generation |
 | Valid server | Five minutes before generation | 90 days after generation |
 | Expired server | Two days before generation | One day before generation |
+| Client | Five minutes before generation | 90 days after generation |
 
-Both server certificates include `DNS:localhost`, server-authentication usage and `CA:FALSE`, with separate random serial numbers. No `.srl` state file is needed.
+Both server certificates include `DNS:localhost`, server-authentication usage and `CA:FALSE`, with separate random serial numbers. The client certificate uses a separate key, client-authentication usage and `CA:FALSE`; it does not need a server hostname SAN. No `.srl` state file is needed.
 
-The tool reloads both PFX bundles with their password, checks that each has a private key and compares certificate fingerprints with the originals. It also decrypts both encrypted PEM key exports and compares their public keys with the original keys. These checks verify the exports; they do not perform independent chain or hostname validation. The curl checks below exercise live validation. Optional OpenSSL checks are described in the scenario records.
+The tool reloads all three PFX bundles with their password, checks that each has a private key and compares certificate fingerprints with the originals. It also decrypts all three encrypted PEM key exports and compares their public keys with the original keys. These checks verify the exports; they do not perform independent chain or hostname validation. The curl checks below exercise live validation. Optional OpenSSL checks are described in the scenario records.
 
 On macOS, PFX reloading requires temporary keychain storage managed by .NET. Imported certificate objects are disposed when no longer needed. Windows and Linux use `EphemeralKeySet` for these verification imports.
 
-The standard generated directory is excluded from Git and the Docker build context. On macOS/Linux, the directory is created with owner-only permissions (`700`), private-key files are created with mode `600`, and both password-protected PFX bundles are explicitly set to `644` before publication so the container's non-root user can read them, including under `umask 077`. Windows uses inherited filesystem permissions rather than Unix modes. Do not commit generated material or use these lab keys outside this exercise.
+The standard generated directory is excluded from Git and the Docker build context. On macOS/Linux, the directory is created with owner-only permissions (`700`), private-key files are created with mode `600`, and the public CA certificate and two server PFX bundles are explicitly set to `644` before publication so the container's non-root user can read them, including under `umask 077`. The client certificate, encrypted client key and client PFX remain owner-readable only (`600`); they are used on the host and are not mounted in the server. Windows uses inherited filesystem permissions rather than Unix modes. Do not commit generated material or use these lab keys outside this exercise.
 
 ## 2. Supply the PFX export password
 
@@ -202,6 +206,14 @@ docker compose -f lab/compose.yaml up -d
 
 Repeat the API request without changing its trust settings. All four stages should pass again, provided the valid certificate remains within its validity period. This demonstrates that replacing the server certificate resolves the failure.
 
+## 7. Try mutual TLS
+
+The [mutual TLS scenario](scenarios/05-mutual-tls.md) enables mandatory client certificates through `compose.mtls.yaml`. It demonstrates three cases: no client certificate, a trusted client certificate and a client certificate from a different CA.
+
+Use a complete set from the current C# generator, including `client.pfx`. Earlier generated sets may lack client credentials. The public CA certificate must be readable by the container's non-root user; the current generator sets this permission. Keep private keys and client credentials on the host.
+
+This is a lab capability. CertHub's diagnostic probe does not yet send a client certificate, and successful server validation alone cannot establish that an mTLS server accepted the client.
+
 ## Cleanup and regeneration
 
 After recovery, stop the base service:
@@ -210,7 +222,7 @@ After recovery, stop the base service:
 docker compose -f lab/compose.yaml down
 ```
 
-If stopping while the expired override is active, use both Compose files with `down` instead. The PFX environment variable must remain set while Compose processes either configuration, including cleanup.
+If stopping while the expired or mTLS override is active, use the base file and that override with `down` instead. The PFX environment variable must remain set while Compose processes either configuration, including cleanup.
 
 Stop the API with Ctrl+C. If the User Secrets values were added only for this exercise, remove them:
 
@@ -233,12 +245,13 @@ Regeneration creates a new CA and new certificate fingerprints. Stop the lab bef
 - [02 Untrusted certificate authority](scenarios/02-untrusted-ca.md)
 - [03 Hostname mismatch](scenarios/03-hostname-mismatch.md)
 - [04 Expired server certificate and recovery](scenarios/04-expired-server-certificate.md)
+- [05 Mutual TLS](scenarios/05-mutual-tls.md)
 
 Recorded timestamps and fingerprints describe earlier runs and will differ from newly generated material. Use the current generator rather than applying historical certificate dates to a newly generated CA.
 
 ## Earlier OpenSSL generator
 
-`lab/scripts/generate-certificates.sh` remains available as the earlier, independently verified macOS shell workflow. It requires Bash and OpenSSL with explicit certificate-date support and has different password prompts. It is not the default setup path, and its generated directory includes OpenSSL serial state. Do not run either generator over an existing output set.
+`lab/scripts/generate-certificates.sh` remains available as the earlier, independently verified macOS shell workflow. It requires Bash and OpenSSL with explicit certificate-date support and has different password prompts. It does not generate the client credentials used by the mTLS scenario. It is not the default setup path, and its generated directory includes OpenSSL serial state. Do not run either generator over an existing output set.
 
 ## Planned learning notes
 
