@@ -412,7 +412,7 @@ try
     }
 
     WriteNewFile(Path.Combine(stagingDirectory, "certhub-lab-root-ca.cert.pem"),
-        Encoding.UTF8.GetBytes(caCertificatePem), false);
+        Encoding.UTF8.GetBytes(caCertificatePem), true);
     WriteNewFile(Path.Combine(stagingDirectory, "certhub-lab-root-ca.key.pem"), Encoding.UTF8.GetBytes(caKeyPem),
         false);
     WriteNewFile(Path.Combine(stagingDirectory, "localhost.cert.pem"), Encoding.UTF8.GetBytes(serverCertificatePem),
@@ -429,10 +429,11 @@ try
 
     if (OperatingSystem.IsMacOS() || OperatingSystem.IsLinux())
     {
-        var pfxUnixFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead |
-                              UnixFileMode.OtherRead;
-        File.SetUnixFileMode(Path.Combine(stagingDirectory, "localhost.pfx"), pfxUnixFileMode);
-        File.SetUnixFileMode(Path.Combine(stagingDirectory, "localhost-expired.pfx"), pfxUnixFileMode);
+        var containerReadableMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead |
+                                    UnixFileMode.OtherRead;
+        File.SetUnixFileMode(Path.Combine(stagingDirectory, "localhost.pfx"), containerReadableMode);
+        File.SetUnixFileMode(Path.Combine(stagingDirectory, "localhost-expired.pfx"), containerReadableMode);
+        File.SetUnixFileMode(Path.Combine(stagingDirectory, "certhub-lab-root-ca.cert.pem"), containerReadableMode);
     }
     
     Directory.Move(sourceDirName: stagingDirectory, destDirName: outputDirectory);
