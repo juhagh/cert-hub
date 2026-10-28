@@ -29,6 +29,9 @@ jobs:
       - name: Build solution
         run: dotnet build CertHub.slnx --no-restore --configuration Release
         
+      - name: Build Certificate Generator
+        run: dotnet build lab/tools/GenerateCertificates.cs --configuration Release
+        
       - name: Run tests
         run: |
           dotnet test tests/CertHub.Domain.Tests/CertHub.Domain.Tests.csproj --no-build --no-restore --configuration Release
