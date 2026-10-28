@@ -62,7 +62,7 @@ if (Console.IsInputRedirected)
     return 1;
 }
 
-var pfxPassword = ReadPassword("\nPlease enter PFX bundle password. It will be used for both of the PFX bundles: ");
+var pfxPassword = ReadPassword("\nPlease enter PFX bundle password. It will be used for client and server PFX bundles: ");
 var pfxPasswordConfirmation = ReadPassword("Please confirm PFX bundle password: ");
 
 if (string.IsNullOrWhiteSpace(pfxPassword))
@@ -81,7 +81,7 @@ Console.WriteLine("\nPFX password confirmed.");
 
 var keyPassword =
     ReadPassword(
-        "\nPlease enter private key password. This password will protect both standalone CA and server PEM keys: ");
+        "\nPlease enter private key password. This password will protect standalone CA, server and client PEM keys: ");
 
 var keyPasswordConfirmation = ReadPassword("Please confirm private key password: ");
 
@@ -175,8 +175,8 @@ var serverKeyUsageExtension = new X509KeyUsageExtension(
     keyUsages: X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
     critical: true);
 
-var enhancedKeyUsageExtension = new X509EnhancedKeyUsageExtension(
-    enhancedKeyUsages: new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") }, 
+var serverEnhancedKeyUsageExtension = new X509EnhancedKeyUsageExtension(
+    enhancedKeyUsages: new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") }, // Server authentication
     critical: false);
 
 var sanBuilder = new SubjectAlternativeNameBuilder();
@@ -192,19 +192,19 @@ var serverAuthorityKeyIdentifierExtension =
 
 serverRequest.CertificateExtensions.Add(serverBasicConstraints);
 serverRequest.CertificateExtensions.Add(serverKeyUsageExtension);
-serverRequest.CertificateExtensions.Add(enhancedKeyUsageExtension);
+serverRequest.CertificateExtensions.Add(serverEnhancedKeyUsageExtension);
 serverRequest.CertificateExtensions.Add(sanExtension);
 serverRequest.CertificateExtensions.Add(serverSubjectKeyIdentifierExtension);
 serverRequest.CertificateExtensions.Add(serverAuthorityKeyIdentifierExtension);
 
-byte[] serial = RandomNumberGenerator.GetBytes(16);
-serial[0] = 1;
+byte[] serverSerial = RandomNumberGenerator.GetBytes(16);
+serverSerial[0] = 1;
 
 using var issuedServerCertificate = serverRequest.Create(
     issuerCertificate: caCertificate,
     notBefore: serverNotBefore,
     notAfter: serverNotAfter,
-    serialNumber: serial);
+    serialNumber: serverSerial);
 
 using var serverCertificate = issuedServerCertificate.CopyWithPrivateKey(serverKey);
 
@@ -215,14 +215,14 @@ Console.WriteLine($"\nSubject:{serverCertificate.Subject}" +
                   $"\nNotAfter: {serverCertificate.NotAfter.ToUniversalTime():O}" +
                   $"\nHasPrivateKey: {serverCertificate.HasPrivateKey}");
 
-byte[] expiredSerial = RandomNumberGenerator.GetBytes(16);
-expiredSerial[0] = 1;
+byte[] expiredServerSerial = RandomNumberGenerator.GetBytes(16);
+expiredServerSerial[0] = 1;
 
 using var issuedExpiredServerCertificate = serverRequest.Create(
     issuerCertificate: caCertificate,
     notBefore: expiredNotBefore,
     notAfter: expiredNotAfter,
-    serialNumber: expiredSerial);
+    serialNumber: expiredServerSerial);
 
 using var expiredServerCertificate = issuedExpiredServerCertificate.CopyWithPrivateKey(serverKey);
 Console.WriteLine("\nExpired server certificate:");
@@ -232,6 +232,61 @@ Console.WriteLine($"\nSubject:{expiredServerCertificate.Subject}" +
                   $"\nNotAfter: {expiredServerCertificate.NotAfter.ToUniversalTime():O}" +
                   $"\nHasPrivateKey: {expiredServerCertificate.HasPrivateKey}");
 
+// Create Client key and request
+using var clientKey = RSA.Create(3072);
+
+var clientRequest = new CertificateRequest(
+    subjectName: "CN=CertHub Lab Client",
+    key: clientKey,
+    hashAlgorithm: HashAlgorithmName.SHA256,
+    padding: RSASignaturePadding.Pkcs1
+);
+
+var clientBasicConstraints = new X509BasicConstraintsExtension(
+    certificateAuthority: false,
+    hasPathLengthConstraint: false,
+    pathLengthConstraint: 0,
+    critical: true);
+
+var clientKeyUsageExtension = new X509KeyUsageExtension(
+    keyUsages: X509KeyUsageFlags.DigitalSignature,
+    critical: true);
+
+var clientEnhancedKeyUsageExtension = new X509EnhancedKeyUsageExtension(
+    enhancedKeyUsages: new OidCollection { new Oid("1.3.6.1.5.5.7.3.2") }, // 1.3.6.1.5.5.7.3.2 Client Authentication
+    critical: false);
+
+var clientSubjectKeyIdentifierExtension = new X509SubjectKeyIdentifierExtension(
+    key: clientRequest.PublicKey, 
+    critical: false);
+
+var clientAuthorityKeyIdentifierExtension =
+    X509AuthorityKeyIdentifierExtension.CreateFromSubjectKeyIdentifier(subjectKeyIdentifierExtension);
+
+clientRequest.CertificateExtensions.Add(clientBasicConstraints);
+clientRequest.CertificateExtensions.Add(clientKeyUsageExtension);
+clientRequest.CertificateExtensions.Add(clientEnhancedKeyUsageExtension);
+clientRequest.CertificateExtensions.Add(clientSubjectKeyIdentifierExtension);
+clientRequest.CertificateExtensions.Add(clientAuthorityKeyIdentifierExtension);
+
+byte[] clientSerial = RandomNumberGenerator.GetBytes(16);
+clientSerial[0] = 1;
+
+using var issuedClientCertificate = clientRequest.Create(
+    issuerCertificate: caCertificate,
+    notBefore: serverNotBefore,
+    notAfter: serverNotAfter,
+    serialNumber: clientSerial);
+
+using var clientCertificate = issuedClientCertificate.CopyWithPrivateKey(clientKey);
+
+Console.WriteLine("\nClient certificate:");
+Console.WriteLine($"\nSubject:{clientCertificate.Subject}" +
+                  $"\nIssuer: {clientCertificate.Issuer}" +
+                  $"\nNotBefore: {clientCertificate.NotBefore.ToUniversalTime():O}" +
+                  $"\nNotAfter: {clientCertificate.NotAfter.ToUniversalTime():O}" +
+                  $"\nHasPrivateKey: {clientCertificate.HasPrivateKey}");
+
 var exportParameters = new PbeParameters(
     encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
     hashAlgorithm: HashAlgorithmName.SHA256,
@@ -239,9 +294,11 @@ var exportParameters = new PbeParameters(
 
 var serverPfx = serverCertificate.ExportPkcs12(exportParameters, pfxPassword);
 var expiredServerPfx = expiredServerCertificate.ExportPkcs12(exportParameters, pfxPassword);
+var clientPfx = clientCertificate.ExportPkcs12(exportParameters, pfxPassword);
 
 Console.WriteLine($"\nServerPfxBundleLength: {serverPfx.Length}");
 Console.WriteLine($"\nExpiredServerPfxBundleLength: {expiredServerPfx.Length}");
+Console.WriteLine($"\nClientPfxBundleLength: {clientPfx.Length}");
 
 X509KeyStorageFlags keyStorageFlags = OperatingSystem.IsMacOS() ? X509KeyStorageFlags.DefaultKeySet : X509KeyStorageFlags.EphemeralKeySet;  
 
@@ -271,21 +328,40 @@ if (issuedExpiredServerCertificate.GetCertHashString(HashAlgorithmName.SHA256) !
     return 1;
 }
 
-Console.WriteLine("\nBoth PFX bundles verified.");
+using var clientPkcs12Cert = X509CertificateLoader.LoadPkcs12(clientPfx, pfxPassword, keyStorageFlags);
+if (!clientPkcs12Cert.HasPrivateKey)
+{
+    Console.Error.WriteLine("Client PFX is missing its private key.");
+    return 1;
+}
 
+if (issuedClientCertificate.GetCertHashString(HashAlgorithmName.SHA256) != clientPkcs12Cert.GetCertHashString(HashAlgorithmName.SHA256))
+{
+    Console.Error.WriteLine("Client certificate fingerprints do not match.");
+    return 1;
+}
+
+Console.WriteLine("\nAll PFX bundles verified.");
+
+// Export PEM encoded certificate
 var caCertificatePem = caCertificate.ExportCertificatePem();
 var serverCertificatePem = serverCertificate.ExportCertificatePem();
 var expiredServerCertificatePem = expiredServerCertificate.ExportCertificatePem();
+var clientCertificatePem = clientCertificate.ExportCertificatePem();
 var serverCsrPem = serverRequest.CreateSigningRequestPem();
 
 var caKeyPem = caKey.ExportEncryptedPkcs8PrivateKeyPem(keyPassword, exportParameters);
 var serverKeyPem = serverKey.ExportEncryptedPkcs8PrivateKeyPem(keyPassword, exportParameters);
+var clientKeyPem = clientKey.ExportEncryptedPkcs8PrivateKeyPem(keyPassword, exportParameters);
 
 using var tempCaRsaKey = RSA.Create();
 tempCaRsaKey.ImportFromEncryptedPem(input: caKeyPem, password: keyPassword);
 
 using var tempServerRsaKey = RSA.Create();
 tempServerRsaKey.ImportFromEncryptedPem(input: serverKeyPem, password: keyPassword);
+
+using var tempClientRsaKey = RSA.Create();
+tempClientRsaKey.ImportFromEncryptedPem(input: clientKeyPem, password: keyPassword);
 
 if (!tempCaRsaKey.ExportSubjectPublicKeyInfo().SequenceEqual(caKey.ExportSubjectPublicKeyInfo()))
 {
@@ -299,7 +375,13 @@ if (!tempServerRsaKey.ExportSubjectPublicKeyInfo().SequenceEqual(serverKey.Expor
     return 1;
 }
 
-Console.WriteLine("Both encrypted private-key exports verified.");
+if (!tempClientRsaKey.ExportSubjectPublicKeyInfo().SequenceEqual(clientKey.ExportSubjectPublicKeyInfo()))
+{
+    Console.Error.WriteLine("Client key SubjectPublicKeyInfo does not match the original key.");
+    return 1;
+}
+
+Console.WriteLine("All encrypted private-key exports verified.");
 
 bool stagingCreated = false;
 try
@@ -341,6 +423,9 @@ try
     WriteNewFile(Path.Combine(stagingDirectory, "localhost.csr.pem"), Encoding.UTF8.GetBytes(serverCsrPem), false);
     WriteNewFile(Path.Combine(stagingDirectory, "localhost.pfx"), serverPfx, true);
     WriteNewFile(Path.Combine(stagingDirectory, "localhost-expired.pfx"), expiredServerPfx, true);
+    WriteNewFile(Path.Combine(stagingDirectory, "client.cert.pem"), Encoding.UTF8.GetBytes(clientCertificatePem), false);
+    WriteNewFile(Path.Combine(stagingDirectory, "client.key.pem"), Encoding.UTF8.GetBytes(clientKeyPem), false);
+    WriteNewFile(Path.Combine(stagingDirectory, "client.pfx"), clientPfx, false);
 
     if (OperatingSystem.IsMacOS() || OperatingSystem.IsLinux())
     {
