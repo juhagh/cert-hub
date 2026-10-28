@@ -81,7 +81,7 @@ The API currently has no authentication or rate limiting. Its hostname-and-port 
 
 ## TLS Lab
 
-Start with the [TLS lab setup guide](lab/README.md) for a fresh-clone walkthrough covering prerequisites, certificate generation, password prompts, Docker startup, API trust settings and cleanup. The generator creates valid and expired certificate bundles with dates relative to generation time and refuses to overwrite existing output.
+Start with the [TLS lab setup guide](lab/README.md) for a fresh-clone walkthrough covering prerequisites, certificate generation, password prompts, Docker startup, API trust settings and cleanup. The .NET 10 file-based generator creates valid and expired certificate bundles with dates relative to generation time and refuses to overwrite existing output. It requires no OpenSSL or Bash for generation; macOS execution is verified, while Windows and Linux validation remain pending.
 
 A separate Docker-based lab provides controlled scenarios for learning and investigating TLS behaviour:
 

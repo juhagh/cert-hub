@@ -6,44 +6,50 @@ The lab uses its own generated certificate authority (CA). You do not need to ad
 
 ## Prerequisites
 
-- macOS or Linux with Bash.
-- OpenSSL supporting `openssl x509 -not_before` and `-not_after`. The generator checks these capabilities; OpenSSL 3.6 was used for the verified macOS run. macOS's bundled `openssl` may not support them, so ensure a compatible installation is on `PATH`.
+- The .NET 10 SDK for the file-based generator and API.
 - Docker with Docker Compose v2, with the Docker engine running.
-- curl.
-- The .NET 10 SDK if you also want to run the CertHub API on the host.
+- curl (`curl.exe` in Windows PowerShell).
+- An interactive terminal for hidden password entry.
+- Optional: OpenSSL for independent certificate inspection and verification. It is not required by the C# generator.
 
 Check your tools:
 
 ```bash
-openssl version
+dotnet --version
 docker compose version
 curl --version
-dotnet --version
 ```
 
-The commands below run from the repository root. The certificate generator itself can be invoked from any working directory. Its date helper supports macOS and Linux; the end-to-end bootstrap has been manually verified on macOS with Docker Desktop.
+The generator implements macOS, Linux and Windows branches using .NET cryptography APIs directly, without invoking Bash or OpenSSL. Generation, file permissions, failure cleanup and Docker loading have been manually verified on macOS. Windows and Linux execution have not yet been verified; cross-platform implementation is not a claim of completed validation on those systems.
+
+Run the walkthrough from the repository root. Multiline commands below use Bash/zsh syntax; PowerShell users can enter the same commands on one line. Where shell-specific configuration differs, PowerShell alternatives are shown. Use `curl.exe` rather than a PowerShell alias.
 
 ## 1. Generate the certificates
 
 ```bash
-bash lab/scripts/generate-certificates.sh
+dotnet run --file lab/tools/GenerateCertificates.cs -- lab/certificates/generated
 ```
 
-The script creates `lab/certificates/generated/` and refuses to reuse an existing file, directory or symbolic link at that path. It does not overwrite your previous lab material. Stop running lab containers before moving an existing generated directory aside; retain it privately outside the repository if you need it later. Do not move private keys into a new, unignored repository folder.
+The output directory is the app's single required argument. Relative paths resolve against the caller's working directory; absolute output paths are also supported. Its parent directory must already exist. The tool refuses existing output paths before prompting or generating keys, including existing symbolic links.
 
-If generation fails, inspect the error and retain the partial output for diagnosis. A subsequent run will refuse that directory too. Move it aside before retrying rather than mixing old and new files.
+The tool prepares and verifies exports before writing eight files into a uniquely named sibling staging directory. Only after writing succeeds does it move staging to the requested output path. File writes use create-new semantics; if publication fails, the tool attempts to clean up staging and reports any cleanup failure. It does not overwrite your previous lab material.
+
+Stop running lab containers before moving an existing generated directory aside; retain it privately outside the repository if needed. Do not move private keys into an unignored repository folder. Output paths outside `lab/certificates/generated/` are not automatically covered by the repository's ignore rule.
+
+If a run fails, inspect its error and any reported staging path. The tool cannot guarantee cleanup after forced termination or a machine crash. Inspect leftover staging privately before removing it; do not stage it in Git.
 
 ### Password prompts
 
-There are three distinct password roles:
+The C# tool asks for two passwords, each entered twice for confirmation:
 
-| Password | When to choose it | Where it is used again |
+| Password | Protects | Used again for |
 |---|---|---|
-| CA private-key passphrase | First encrypted key-generation step | Creating the self-signed CA certificate and signing each server certificate |
-| Server private-key passphrase | Second encrypted key-generation step | Creating the CSR and exporting both PFX bundles |
-| PFX export password | First PFX export | Choose the same value during the second export; supply it to Docker Compose |
+| PFX bundle password | Both `localhost.pfx` and `localhost-expired.pfx` | `CERTHUB_LAB_PFX_PASSWORD` for Compose |
+| Standalone key password | Both CA and server encrypted PEM private-key exports | Decrypting those PEM keys for later inspection or signing |
 
-The script labels each stage. OpenSSL asks for confirmation when choosing a new password. Passwords are entered interactively and are not written into the script. The script asks you to use the same export password for both bundles but does not enforce equality between them.
+Both passwords must be nonblank and match their confirmations. Input is hidden, and Backspace is supported. Redirected standard input is rejected because the tool requires an interactive terminal. Neither password is printed or written into source/configuration files.
+
+The same confirmed PFX password is applied programmatically to both bundles. Unlike the earlier shell workflow, you do not need to enter CA-key and server-key passphrases repeatedly during issuance: the keys are generated and used in memory, then their standalone exports are encrypted.
 
 ### Generated material
 
@@ -51,7 +57,6 @@ The script labels each stage. OpenSSL asks for confirmation when choosing a new 
 |---|---|
 | `certhub-lab-root-ca.cert.pem` | Public CA certificate supplied to clients for explicit trust |
 | `certhub-lab-root-ca.key.pem` | Encrypted CA signing key |
-| `certhub-lab-root-ca.cert.srl` | Serial state used during certificate issuance |
 | `localhost.key.pem` | Encrypted server private key shared by the two controlled lab certificates |
 | `localhost.csr.pem` | Certificate signing request for `localhost` |
 | `localhost.cert.pem` | Valid CA-issued server certificate |
@@ -67,9 +72,13 @@ Validity periods are calculated from one captured generation time:
 | Valid server | Five minutes before generation | 90 days after generation |
 | Expired server | Two days before generation | One day before generation |
 
-Both server certificates include `DNS:localhost`, server-authentication usage and `CA:FALSE`. The script verifies acceptance of the valid certificate and requires the expired certificate to fail with the expected server-certificate expiry error.
+Both server certificates include `DNS:localhost`, server-authentication usage and `CA:FALSE`, with separate random serial numbers. No `.srl` state file is needed.
 
-Generated files are excluded from Git and the Docker build context. The output directory is private (`700`), standalone private keys remain `600`, and password-protected PFX bundles are made readable (`644`) for the container's non-root user. Do not commit generated material or use these lab keys outside this exercise.
+The tool reloads both PFX bundles with their password, checks that each has a private key and compares certificate fingerprints with the originals. It also decrypts both encrypted PEM key exports and compares their public keys with the original keys. These checks verify the exports; they do not perform independent chain or hostname validation. The curl checks below exercise live validation. Optional OpenSSL checks are described in the scenario records.
+
+On macOS, PFX reloading requires temporary keychain storage managed by .NET. Imported certificate objects are disposed when no longer needed. Windows and Linux use `EphemeralKeySet` for these verification imports.
+
+The standard generated directory is excluded from Git and the Docker build context. On macOS/Linux, the directory is created with owner-only permissions (`700`), private-key files are created with mode `600`, and both password-protected PFX bundles are explicitly set to `644` before publication so the container's non-root user can read them, including under `umask 077`. Windows uses inherited filesystem permissions rather than Unix modes. Do not commit generated material or use these lab keys outside this exercise.
 
 ## 2. Supply the PFX export password
 
@@ -82,7 +91,17 @@ printf '\n'
 export CERTHUB_LAB_PFX_PASSWORD
 ```
 
-This input sequence works in Bash and zsh. Use a nonempty password matching both PFX files. The environment variable configures the lab server, not CertHub's probe trust. Repeat this step in a new terminal if needed.
+This input sequence works in Bash and zsh. Use the confirmed PFX bundle password, not the standalone PEM-key password. The environment variable configures the lab server, not CertHub's probe trust. Repeat this step in a new terminal if needed.
+
+PowerShell alternative:
+
+```powershell
+$pfxSecret = Read-Host 'Lab PFX export password' -AsSecureString
+$env:CERTHUB_LAB_PFX_PASSWORD = [System.Net.NetworkCredential]::new('', $pfxSecret).Password
+Remove-Variable pfxSecret
+```
+
+The resulting environment variable is a plain-text value passed to the local container; the secure prompt only hides interactive input.
 
 ## 3. Start and verify valid TLS
 
@@ -114,6 +133,13 @@ dotnet user-secrets set "TlsProbe:TrustConfigurationId" "certhub-lab" --project 
 dotnet user-secrets set "TlsProbe:RootCertificatePaths:0" \
   "$(pwd)/lab/certificates/generated/certhub-lab-root-ca.cert.pem" \
   --project src/CertHub.Api
+```
+
+For PowerShell, replace the root-path command with:
+
+```powershell
+$labRootCertificate = (Resolve-Path 'lab/certificates/generated/certhub-lab-root-ca.cert.pem').Path
+dotnet user-secrets set "TlsProbe:RootCertificatePaths:0" "$labRootCertificate" --project src/CertHub.Api
 ```
 
 The project already includes a `UserSecretsId`; initialization is unnecessary. User Secrets load automatically in Development and are not encrypted. Existing environment or command-line overrides can take precedence.
@@ -195,6 +221,8 @@ dotnet user-secrets remove "TlsProbe:RootCertificatePaths:0" --project src/CertH
 unset CERTHUB_LAB_PFX_PASSWORD
 ```
 
+In PowerShell, use `Remove-Item Env:CERTHUB_LAB_PFX_PASSWORD` instead of `unset`. After a curl command, inspect `$LASTEXITCODE` rather than `echo $?` to obtain its numeric exit code.
+
 Remove any additional temporary root entries or probe overrides you added. Restart the API before testing restored configuration. With no other trust overrides, it returns to system trust.
 
 Regeneration creates a new CA and new certificate fingerprints. Stop the lab before moving generated files aside and generating another set. Clients must use the newly generated root; the old CA cannot validate the replacement certificates. The examples above reuse the same file paths, but any copied CA certificates must also be updated.
@@ -206,4 +234,12 @@ Regeneration creates a new CA and new certificate fingerprints. Stop the lab bef
 - [03 Hostname mismatch](scenarios/03-hostname-mismatch.md)
 - [04 Expired server certificate and recovery](scenarios/04-expired-server-certificate.md)
 
-Recorded timestamps and fingerprints describe earlier runs and will differ from newly generated material. Some scenario records contain historical issuance commands; use this bootstrap to generate a current certificate set rather than applying those historical dates to a new CA.
+Recorded timestamps and fingerprints describe earlier runs and will differ from newly generated material. Use the current generator rather than applying historical certificate dates to a newly generated CA.
+
+## Earlier OpenSSL generator
+
+`lab/scripts/generate-certificates.sh` remains available as the earlier, independently verified macOS shell workflow. It requires Bash and OpenSSL with explicit certificate-date support and has different password prompts. It is not the default setup path, and its generated directory includes OpenSSL serial state. Do not run either generator over an existing output set.
+
+## Planned learning notes
+
+A future walkthrough will explain each artefact from key generation and CSR through signing, PFX packaging, deployment and verification, then compare this local lab with production PKI, renewal and key management.
