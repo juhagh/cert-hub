@@ -21,23 +21,14 @@ string outputDirectory;
 try
 {
     outputDirectory = Path.GetFullPath(args[0]);
-    Console.WriteLine($"Path provided: {outputDirectory}");
 }
-catch (IOException ex)
+catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
 {
     Console.Error.WriteLine($"Failed to construct output directory path: {ex.Message}");
     return 1;
 }
-catch (UnauthorizedAccessException ex)
-{
-    Console.Error.WriteLine($"Failed to construct output directory path: {ex.Message}");
-    return 1;
-}
-catch (ArgumentException ex)
-{
-    Console.Error.WriteLine($"Failed to construct output directory path: {ex.Message}");
-    return 1;
-}
+
+Console.WriteLine($"Path provided: {outputDirectory}");
 
 if (Path.Exists(outputDirectory))
 {
@@ -311,12 +302,7 @@ try
 
     Console.WriteLine($"Certificate files are created and can be found from: {outputDirectory}");
 }
-catch (IOException ex)
-{
-    Console.Error.WriteLine($"Failed to create certificate output: {ex.Message}");
-    return 1;
-}
-catch (UnauthorizedAccessException ex)
+catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 {
     Console.Error.WriteLine($"Failed to create certificate output: {ex.Message}");
     return 1;
@@ -330,11 +316,7 @@ finally
             Directory.Delete(stagingDirectory, recursive: true);
         }
     }
-    catch (IOException ex)
-    {
-        Console.Error.WriteLine($"Failed to clean up staging directory: {stagingDirectory}. Error: {ex.Message}");
-    }
-    catch (UnauthorizedAccessException ex)
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
     {
         Console.Error.WriteLine($"Failed to clean up staging directory: {stagingDirectory}. Error: {ex.Message}");
     }
