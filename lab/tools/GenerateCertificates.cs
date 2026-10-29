@@ -136,11 +136,9 @@ caRequest.CertificateExtensions.Add(authorityKeyIdentifierExtension);
 
 using var caCertificate = caRequest.CreateSelfSigned(caNotBefore, caNotAfter);
 
-Console.WriteLine("\nCA Root certificate:");
-Console.WriteLine($"\nSubject: {caCertificate.Subject}," +
-                  $"\nIssuer: {caCertificate.Issuer}," +
-                  $"\nNotBefore: {caCertificate.NotBefore.ToUniversalTime():O}," +
-                  $"\nNotAfter: {caCertificate.NotAfter.ToUniversalTime():O}");
+PrintCertificateSummary(
+    label: "CA Root certificate:",
+    certificate: caCertificate);
 
 // Create Server key and request
 using var serverKey = RSA.Create(3072);
@@ -192,12 +190,9 @@ using var issuedServerCertificate = serverRequest.Create(
 
 using var serverCertificate = issuedServerCertificate.CopyWithPrivateKey(serverKey);
 
-Console.WriteLine("\nValid server certificate:");
-Console.WriteLine($"\nSubject:{serverCertificate.Subject}" +
-                  $"\nIssuer: {serverCertificate.Issuer}" +
-                  $"\nNotBefore: {serverCertificate.NotBefore.ToUniversalTime():O}" +
-                  $"\nNotAfter: {serverCertificate.NotAfter.ToUniversalTime():O}" +
-                  $"\nHasPrivateKey: {serverCertificate.HasPrivateKey}");
+PrintCertificateSummary(
+    label: "Valid server certificate:",
+    certificate: serverCertificate);
 
 using var issuedExpiredServerCertificate = serverRequest.Create(
     issuerCertificate: caCertificate,
@@ -206,12 +201,10 @@ using var issuedExpiredServerCertificate = serverRequest.Create(
     serialNumber: CreateSerialNumber());
 
 using var expiredServerCertificate = issuedExpiredServerCertificate.CopyWithPrivateKey(serverKey);
-Console.WriteLine("\nExpired server certificate:");
-Console.WriteLine($"\nSubject:{expiredServerCertificate.Subject}" +
-                  $"\nIssuer: {expiredServerCertificate.Issuer}" +
-                  $"\nNotBefore: {expiredServerCertificate.NotBefore.ToUniversalTime():O}" +
-                  $"\nNotAfter: {expiredServerCertificate.NotAfter.ToUniversalTime():O}" +
-                  $"\nHasPrivateKey: {expiredServerCertificate.HasPrivateKey}");
+
+PrintCertificateSummary(
+    label: "Expired server certificate:",
+    certificate: expiredServerCertificate);
 
 // Create Client key and request
 using var clientKey = RSA.Create(3072);
@@ -258,12 +251,9 @@ using var issuedClientCertificate = clientRequest.Create(
 
 using var clientCertificate = issuedClientCertificate.CopyWithPrivateKey(clientKey);
 
-Console.WriteLine("\nClient certificate:");
-Console.WriteLine($"\nSubject:{clientCertificate.Subject}" +
-                  $"\nIssuer: {clientCertificate.Issuer}" +
-                  $"\nNotBefore: {clientCertificate.NotBefore.ToUniversalTime():O}" +
-                  $"\nNotAfter: {clientCertificate.NotAfter.ToUniversalTime():O}" +
-                  $"\nHasPrivateKey: {clientCertificate.HasPrivateKey}");
+PrintCertificateSummary(
+    label: "Client certificate:",
+    certificate: clientCertificate);
 
 var exportParameters = new PbeParameters(
     encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
@@ -534,6 +524,17 @@ byte[] CreateSerialNumber()
     serial[0] = 1;
 
     return serial;
+}
+
+void PrintCertificateSummary(string label, X509Certificate2 certificate)
+{
+    Console.WriteLine();
+    Console.WriteLine(label);
+    Console.WriteLine($"\nSubject: {certificate.Subject}" +
+                      $"\nIssuer: {certificate.Issuer}" +
+                      $"\nNotBefore: {certificate.NotBefore.ToUniversalTime():O}" +
+                      $"\nNotAfter: {certificate.NotAfter.ToUniversalTime():O}" +
+                      $"\nHasPrivateKey: {certificate.HasPrivateKey}");
 }
 
 void WriteNewFile(string path, byte[] contents, bool containerReadable)
