@@ -62,38 +62,25 @@ if (Console.IsInputRedirected)
     return 1;
 }
 
-var pfxPassword = ReadPassword("\nPlease enter PFX bundle password. It will be used for client and server PFX bundles: ");
-var pfxPasswordConfirmation = ReadPassword("Please confirm PFX bundle password: ");
-
-if (string.IsNullOrWhiteSpace(pfxPassword))
+bool pfxPasswordOk = TryReadConfirmedPassword(
+    prompt: "\nPlease enter PFX bundle password. It will be used for client and server PFX bundles: ",
+    confirmationPrompt: "Please confirm PFX bundle password: ",
+    password: out string pfxPassword);
+    
+if (!pfxPasswordOk)
 {
-    Console.Error.WriteLine("Password cannot be empty.");
-    return 1;
-}
-
-if (!string.Equals(pfxPassword, pfxPasswordConfirmation, StringComparison.Ordinal))
-{
-    Console.Error.WriteLine("Passwords do not match.");
     return 1;
 }
 
 Console.WriteLine("\nPFX password confirmed.");
 
-var keyPassword =
-    ReadPassword(
-        "\nPlease enter private key password. This password will protect standalone CA, server and client PEM keys: ");
-
-var keyPasswordConfirmation = ReadPassword("Please confirm private key password: ");
-
-if (string.IsNullOrWhiteSpace(keyPassword))
+bool keyPasswordOk = TryReadConfirmedPassword(
+    prompt: "\nPlease enter private key password. This password will protect standalone CA, server and client PEM keys: ",
+    confirmationPrompt: "Please confirm private key password: ",
+    password: out string keyPassword);
+    
+if (!keyPasswordOk)
 {
-    Console.Error.WriteLine("Password cannot be empty.");
-    return 1;
-}
-
-if (!string.Equals(keyPassword, keyPasswordConfirmation, StringComparison.Ordinal))
-{
-    Console.Error.WriteLine("Passwords do not match.");
     return 1;
 }
 
@@ -468,6 +455,29 @@ finally
     {
         Console.Error.WriteLine($"Failed to clean up staging directory: {stagingDirectory}. Error: {ex.Message}");
     }
+}
+
+
+bool TryReadConfirmedPassword(string prompt, string confirmationPrompt, out string password)
+{
+    password = ReadPassword(prompt);
+    string passwordConfirmation = ReadPassword(confirmationPrompt);
+    
+    if (string.IsNullOrWhiteSpace(password))
+    {
+        Console.Error.WriteLine("Password cannot be empty.");
+        password = string.Empty;
+        return false;
+    }
+
+    if (!string.Equals(password, passwordConfirmation, StringComparison.Ordinal))
+    {
+        Console.Error.WriteLine("Passwords do not match.");
+        password = string.Empty;
+        return false;
+    }
+
+    return true;
 }
 
 string ReadPassword(string prompt)
