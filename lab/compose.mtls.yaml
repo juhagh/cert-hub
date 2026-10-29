@@ -1,0 +1,12 @@
+services:
+  tls-server:
+    environment:
+      LabTls__RequireClientCertificate: "true"
+      LabTls__ClientTrustRootPath: "/certificates/client-trust-root.cert.pem"
+    volumes:
+      - type: bind
+        source: ./certificates/generated/certhub-lab-root-ca.cert.pem
+        target: /certificates/client-trust-root.cert.pem
+        bind:
+          create_host_path: false
+        read_only: true

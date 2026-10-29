@@ -81,7 +81,7 @@ The API currently has no authentication or rate limiting. Its hostname-and-port 
 
 ## TLS Lab
 
-Start with the [TLS lab setup guide](lab/README.md) for a fresh-clone walkthrough covering prerequisites, certificate generation, password prompts, Docker startup, API trust settings and cleanup. The .NET 10 file-based generator creates valid and expired certificate bundles with dates relative to generation time and refuses to overwrite existing output. It requires no OpenSSL or Bash for generation; macOS execution is verified, while Windows and Linux validation remain pending.
+Start with the [TLS lab setup guide](lab/README.md) for a fresh-clone walkthrough covering prerequisites, certificate generation, password prompts, Docker startup, API trust settings and cleanup. The .NET 10 file-based generator creates valid and expired server certificate bundles and client credentials with dates relative to generation time and refuses to overwrite existing output. It requires no OpenSSL or Bash for generation; macOS execution is verified, while Windows and Linux validation remain pending.
 
 A separate Docker-based lab provides controlled scenarios for learning and investigating TLS behaviour:
 
@@ -89,6 +89,7 @@ A separate Docker-based lab provides controlled scenarios for learning and inves
 - [Untrusted certificate authority](lab/scenarios/02-untrusted-ca.md)
 - [Hostname mismatch](lab/scenarios/03-hostname-mismatch.md)
 - [Expired server certificate and recovery](lab/scenarios/04-expired-server-certificate.md)
+- [Mutual TLS: missing, trusted and untrusted client certificates](lab/scenarios/05-mutual-tls.md)
 
 The lab uses a locally generated root CA and server certificate. Generated certificates, private keys and PFX files are excluded from Git and the Docker build context. The server certificate is mounted read-only at runtime, and its password is supplied through the `CERTHUB_LAB_PFX_PASSWORD` environment variable.
 
@@ -100,7 +101,9 @@ docker compose -f lab/compose.yaml up --build -d
 
 The expired-certificate scenario uses `lab/compose.expired.yaml` alongside the base configuration to select a separate expired PFX without replacing the valid certificate. It records OpenSSL verification, curl rejection, the CertHub API's `CERT_EXPIRED` report and successful recovery after restoring the valid PFX under the same custom-root trust configuration. See the scenario guide for certificate generation, configuration, execution and cleanup commands.
 
-The lab is separate from the integration-test servers. Both expired and not-yet-valid certificates are covered by integration tests. Docker lab scenarios for not-yet-valid certificates and mTLS remain planned.
+The lab is separate from the integration-test servers. Both expired and not-yet-valid certificates are covered by integration tests. The optional mTLS lab requires a client certificate validated against an explicitly configured lab CA. Manual checks on macOS demonstrated rejection without a client certificate, acceptance with a trusted client certificate and rejection with a certificate issued by a different CA. See the mTLS scenario for commands and observed results.
+
+The CertHub probe currently performs server TLS diagnostics only; it does not yet supply client credentials or diagnose mTLS acceptance. A Docker lab scenario for not-yet-valid certificates remains planned.
 
 ## Architecture
 
