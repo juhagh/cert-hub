@@ -184,14 +184,11 @@ serverRequest.CertificateExtensions.Add(sanExtension);
 serverRequest.CertificateExtensions.Add(serverSubjectKeyIdentifierExtension);
 serverRequest.CertificateExtensions.Add(serverAuthorityKeyIdentifierExtension);
 
-byte[] serverSerial = RandomNumberGenerator.GetBytes(16);
-serverSerial[0] = 1;
-
 using var issuedServerCertificate = serverRequest.Create(
     issuerCertificate: caCertificate,
     notBefore: serverNotBefore,
     notAfter: serverNotAfter,
-    serialNumber: serverSerial);
+    serialNumber: CreateSerialNumber());
 
 using var serverCertificate = issuedServerCertificate.CopyWithPrivateKey(serverKey);
 
@@ -202,14 +199,11 @@ Console.WriteLine($"\nSubject:{serverCertificate.Subject}" +
                   $"\nNotAfter: {serverCertificate.NotAfter.ToUniversalTime():O}" +
                   $"\nHasPrivateKey: {serverCertificate.HasPrivateKey}");
 
-byte[] expiredServerSerial = RandomNumberGenerator.GetBytes(16);
-expiredServerSerial[0] = 1;
-
 using var issuedExpiredServerCertificate = serverRequest.Create(
     issuerCertificate: caCertificate,
     notBefore: expiredNotBefore,
     notAfter: expiredNotAfter,
-    serialNumber: expiredServerSerial);
+    serialNumber: CreateSerialNumber());
 
 using var expiredServerCertificate = issuedExpiredServerCertificate.CopyWithPrivateKey(serverKey);
 Console.WriteLine("\nExpired server certificate:");
@@ -256,14 +250,11 @@ clientRequest.CertificateExtensions.Add(clientEnhancedKeyUsageExtension);
 clientRequest.CertificateExtensions.Add(clientSubjectKeyIdentifierExtension);
 clientRequest.CertificateExtensions.Add(clientAuthorityKeyIdentifierExtension);
 
-byte[] clientSerial = RandomNumberGenerator.GetBytes(16);
-clientSerial[0] = 1;
-
 using var issuedClientCertificate = clientRequest.Create(
     issuerCertificate: caCertificate,
     notBefore: serverNotBefore,
     notAfter: serverNotAfter,
-    serialNumber: clientSerial);
+    serialNumber: CreateSerialNumber());
 
 using var clientCertificate = issuedClientCertificate.CopyWithPrivateKey(clientKey);
 
@@ -535,6 +526,14 @@ bool TryVerifyEncryptedKeyExport(string encryptedKeyPem, string password, RSA or
     }
 
     return true;
+}
+
+byte[] CreateSerialNumber()
+{
+    byte[] serial = RandomNumberGenerator.GetBytes(16);
+    serial[0] = 1;
+
+    return serial;
 }
 
 void WriteNewFile(string path, byte[] contents, bool containerReadable)
