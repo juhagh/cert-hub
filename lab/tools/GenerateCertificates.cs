@@ -104,37 +104,10 @@ Console.WriteLine($"generationTime:   {generationTime:O}" +
 
 // Create Root CA Certificate
 using var caKey = RSA.Create(3072);
+var rootCaRequest = CreateRootCaRequest(caKey); 
 
-// root-ca.ext.cnf equivalent
-var caRequest = new CertificateRequest(
-    subjectName: "CN=CertHub Lab Root CA",
-    key: caKey,
-    hashAlgorithm: HashAlgorithmName.SHA256,
-    padding: RSASignaturePadding.Pkcs1);
-
-var basicConstraintExtension = new X509BasicConstraintsExtension(
-    certificateAuthority: true,
-    hasPathLengthConstraint: true,
-    pathLengthConstraint: 0,
-    critical: true);
-
-var keyUsageExtension = new X509KeyUsageExtension(
-    keyUsages: X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign,
-    critical: true);
-
-var subjectKeyIdentifierExtension = new X509SubjectKeyIdentifierExtension(
-    key: caRequest.PublicKey, 
-    critical: false);
-
-var authorityKeyIdentifierExtension =
-    X509AuthorityKeyIdentifierExtension.CreateFromSubjectKeyIdentifier(subjectKeyIdentifierExtension);
-
-caRequest.CertificateExtensions.Add(basicConstraintExtension);
-caRequest.CertificateExtensions.Add(keyUsageExtension);
-caRequest.CertificateExtensions.Add(subjectKeyIdentifierExtension);
-caRequest.CertificateExtensions.Add(authorityKeyIdentifierExtension);
-
-using var caCertificate = caRequest.CreateSelfSigned(caNotBefore, caNotAfter);
+using var caCertificate = rootCaRequest.CreateSelfSigned(caNotBefore, caNotAfter);
+var caSubjectKeyIdentifier = caCertificate.Extensions.OfType<X509SubjectKeyIdentifierExtension>().Single();
 
 PrintCertificateSummary(
     label: "CA Root certificate:",
@@ -173,7 +146,7 @@ var serverSubjectKeyIdentifierExtension = new X509SubjectKeyIdentifierExtension(
     critical: false);
 
 var serverAuthorityKeyIdentifierExtension =
-    X509AuthorityKeyIdentifierExtension.CreateFromSubjectKeyIdentifier(subjectKeyIdentifierExtension);
+    X509AuthorityKeyIdentifierExtension.CreateFromSubjectKeyIdentifier(caSubjectKeyIdentifier);
 
 serverRequest.CertificateExtensions.Add(serverBasicConstraints);
 serverRequest.CertificateExtensions.Add(serverKeyUsageExtension);
@@ -235,7 +208,7 @@ var clientSubjectKeyIdentifierExtension = new X509SubjectKeyIdentifierExtension(
     critical: false);
 
 var clientAuthorityKeyIdentifierExtension =
-    X509AuthorityKeyIdentifierExtension.CreateFromSubjectKeyIdentifier(subjectKeyIdentifierExtension);
+    X509AuthorityKeyIdentifierExtension.CreateFromSubjectKeyIdentifier(caSubjectKeyIdentifier);
 
 clientRequest.CertificateExtensions.Add(clientBasicConstraints);
 clientRequest.CertificateExtensions.Add(clientKeyUsageExtension);
@@ -535,6 +508,40 @@ void PrintCertificateSummary(string label, X509Certificate2 certificate)
                       $"\nNotBefore: {certificate.NotBefore.ToUniversalTime():O}" +
                       $"\nNotAfter: {certificate.NotAfter.ToUniversalTime():O}" +
                       $"\nHasPrivateKey: {certificate.HasPrivateKey}");
+}
+
+CertificateRequest CreateRootCaRequest(RSA key)
+{
+    // root-ca.ext.cnf equivalent
+    var caRequest = new CertificateRequest(
+        subjectName: "CN=CertHub Lab Root CA",
+        key: key,
+        hashAlgorithm: HashAlgorithmName.SHA256,
+        padding: RSASignaturePadding.Pkcs1);
+
+    var basicConstraintExtension = new X509BasicConstraintsExtension(
+        certificateAuthority: true,
+        hasPathLengthConstraint: true,
+        pathLengthConstraint: 0,
+        critical: true);
+
+    var keyUsageExtension = new X509KeyUsageExtension(
+        keyUsages: X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign,
+        critical: true);
+
+    var subjectKeyIdentifierExtension = new X509SubjectKeyIdentifierExtension(
+        key: caRequest.PublicKey, 
+        critical: false);
+
+    var authorityKeyIdentifierExtension =
+        X509AuthorityKeyIdentifierExtension.CreateFromSubjectKeyIdentifier(subjectKeyIdentifierExtension);
+
+    caRequest.CertificateExtensions.Add(basicConstraintExtension);
+    caRequest.CertificateExtensions.Add(keyUsageExtension);
+    caRequest.CertificateExtensions.Add(subjectKeyIdentifierExtension);
+    caRequest.CertificateExtensions.Add(authorityKeyIdentifierExtension);
+
+    return caRequest;
 }
 
 void WriteNewFile(string path, byte[] contents, bool containerReadable)
