@@ -145,39 +145,7 @@ PrintCertificateSummary(
 // Create Client key and request
 using var clientKey = RSA.Create(3072);
 
-var clientRequest = new CertificateRequest(
-    subjectName: "CN=CertHub Lab Client",
-    key: clientKey,
-    hashAlgorithm: HashAlgorithmName.SHA256,
-    padding: RSASignaturePadding.Pkcs1
-);
-
-var clientBasicConstraints = new X509BasicConstraintsExtension(
-    certificateAuthority: false,
-    hasPathLengthConstraint: false,
-    pathLengthConstraint: 0,
-    critical: true);
-
-var clientKeyUsageExtension = new X509KeyUsageExtension(
-    keyUsages: X509KeyUsageFlags.DigitalSignature,
-    critical: true);
-
-var clientEnhancedKeyUsageExtension = new X509EnhancedKeyUsageExtension(
-    enhancedKeyUsages: new OidCollection { new Oid("1.3.6.1.5.5.7.3.2") }, // 1.3.6.1.5.5.7.3.2 Client Authentication
-    critical: false);
-
-var clientSubjectKeyIdentifierExtension = new X509SubjectKeyIdentifierExtension(
-    key: clientRequest.PublicKey, 
-    critical: false);
-
-var clientAuthorityKeyIdentifierExtension =
-    X509AuthorityKeyIdentifierExtension.CreateFromSubjectKeyIdentifier(caSubjectKeyIdentifier);
-
-clientRequest.CertificateExtensions.Add(clientBasicConstraints);
-clientRequest.CertificateExtensions.Add(clientKeyUsageExtension);
-clientRequest.CertificateExtensions.Add(clientEnhancedKeyUsageExtension);
-clientRequest.CertificateExtensions.Add(clientSubjectKeyIdentifierExtension);
-clientRequest.CertificateExtensions.Add(clientAuthorityKeyIdentifierExtension);
+var clientRequest = CreateClientRequest(clientKey, caSubjectKeyIdentifier);
 
 using var issuedClientCertificate = clientRequest.Create(
     issuerCertificate: caCertificate,
@@ -547,6 +515,45 @@ CertificateRequest CreateServerRequest(RSA key, X509SubjectKeyIdentifierExtensio
     request.CertificateExtensions.Add(sanExtension);
     request.CertificateExtensions.Add(serverSubjectKeyIdentifierExtension);
     request.CertificateExtensions.Add(serverAuthorityKeyIdentifierExtension);
+
+    return request;
+}
+
+CertificateRequest CreateClientRequest(RSA key, X509SubjectKeyIdentifierExtension issuerKeyIdentifier)
+{
+    var request = new CertificateRequest(
+        subjectName: "CN=CertHub Lab Client",
+        key: key,
+        hashAlgorithm: HashAlgorithmName.SHA256,
+        padding: RSASignaturePadding.Pkcs1
+    );
+
+    var clientBasicConstraints = new X509BasicConstraintsExtension(
+        certificateAuthority: false,
+        hasPathLengthConstraint: false,
+        pathLengthConstraint: 0,
+        critical: true);
+
+    var clientKeyUsageExtension = new X509KeyUsageExtension(
+        keyUsages: X509KeyUsageFlags.DigitalSignature,
+        critical: true);
+
+    var clientEnhancedKeyUsageExtension = new X509EnhancedKeyUsageExtension(
+        enhancedKeyUsages: new OidCollection { new Oid("1.3.6.1.5.5.7.3.2") }, // Client Authentication
+        critical: false);
+
+    var clientSubjectKeyIdentifierExtension = new X509SubjectKeyIdentifierExtension(
+        key: request.PublicKey, 
+        critical: false);
+
+    var clientAuthorityKeyIdentifierExtension =
+        X509AuthorityKeyIdentifierExtension.CreateFromSubjectKeyIdentifier(issuerKeyIdentifier);
+
+    request.CertificateExtensions.Add(clientBasicConstraints);
+    request.CertificateExtensions.Add(clientKeyUsageExtension);
+    request.CertificateExtensions.Add(clientEnhancedKeyUsageExtension);
+    request.CertificateExtensions.Add(clientSubjectKeyIdentifierExtension);
+    request.CertificateExtensions.Add(clientAuthorityKeyIdentifierExtension);
 
     return request;
 }
