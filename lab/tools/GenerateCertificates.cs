@@ -333,30 +333,36 @@ var caKeyPem = caKey.ExportEncryptedPkcs8PrivateKeyPem(keyPassword, exportParame
 var serverKeyPem = serverKey.ExportEncryptedPkcs8PrivateKeyPem(keyPassword, exportParameters);
 var clientKeyPem = clientKey.ExportEncryptedPkcs8PrivateKeyPem(keyPassword, exportParameters);
 
-using var tempCaRsaKey = RSA.Create();
-tempCaRsaKey.ImportFromEncryptedPem(input: caKeyPem, password: keyPassword);
+Console.WriteLine("Verifying client private-key export.");
+bool clientKeyOk = TryVerifyEncryptedKeyExport(
+    encryptedKeyPem: clientKeyPem,
+    password: keyPassword,
+    originalKey: clientKey);
 
-using var tempServerRsaKey = RSA.Create();
-tempServerRsaKey.ImportFromEncryptedPem(input: serverKeyPem, password: keyPassword);
-
-using var tempClientRsaKey = RSA.Create();
-tempClientRsaKey.ImportFromEncryptedPem(input: clientKeyPem, password: keyPassword);
-
-if (!tempCaRsaKey.ExportSubjectPublicKeyInfo().SequenceEqual(caKey.ExportSubjectPublicKeyInfo()))
+if (!clientKeyOk)
 {
-    Console.Error.WriteLine("CA key SubjectPublicKeyInfo does not match the original key.");
     return 1;
 }
 
-if (!tempServerRsaKey.ExportSubjectPublicKeyInfo().SequenceEqual(serverKey.ExportSubjectPublicKeyInfo()))
+Console.WriteLine("Verifying server private-key export.");
+bool serverKeyOk = TryVerifyEncryptedKeyExport(
+    encryptedKeyPem: serverKeyPem,
+    password: keyPassword,
+    originalKey: serverKey);
+
+if (!serverKeyOk)
 {
-    Console.Error.WriteLine("Server key SubjectPublicKeyInfo does not match the original key.");
     return 1;
 }
 
-if (!tempClientRsaKey.ExportSubjectPublicKeyInfo().SequenceEqual(clientKey.ExportSubjectPublicKeyInfo()))
+Console.WriteLine("Verifying CA private-key export.");
+bool caKeyOk = TryVerifyEncryptedKeyExport(
+    encryptedKeyPem: caKeyPem,
+    password: keyPassword,
+    originalKey: caKey);
+
+if (!caKeyOk)
 {
-    Console.Error.WriteLine("Client key SubjectPublicKeyInfo does not match the original key.");
     return 1;
 }
 
@@ -511,6 +517,20 @@ bool TryVerifyPfxExport(byte[] pfxBytes, string password, X509Certificate2 origi
     if (originalCertificate.GetCertHashString(HashAlgorithmName.SHA256) != pkcs12Cert.GetCertHashString(HashAlgorithmName.SHA256))
     {
         Console.Error.WriteLine("Certificate fingerprints do not match.");
+        return false;
+    }
+
+    return true;
+}
+
+bool TryVerifyEncryptedKeyExport(string encryptedKeyPem, string password, RSA originalKey)
+{
+    using var tempRsaKey = RSA.Create();
+    tempRsaKey.ImportFromEncryptedPem(input: encryptedKeyPem, password: password);
+    
+    if (!tempRsaKey.ExportSubjectPublicKeyInfo().SequenceEqual(originalKey.ExportSubjectPublicKeyInfo()))
+    {
+        Console.Error.WriteLine("Key SubjectPublicKeyInfo does not match the original key.");
         return false;
     }
 
