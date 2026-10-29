@@ -287,44 +287,36 @@ Console.WriteLine($"\nServerPfxBundleLength: {serverPfx.Length}");
 Console.WriteLine($"\nExpiredServerPfxBundleLength: {expiredServerPfx.Length}");
 Console.WriteLine($"\nClientPfxBundleLength: {clientPfx.Length}");
 
-X509KeyStorageFlags keyStorageFlags = OperatingSystem.IsMacOS() ? X509KeyStorageFlags.DefaultKeySet : X509KeyStorageFlags.EphemeralKeySet;  
+Console.WriteLine("Validating Client PFX.");
+bool clientPfxIsValid = TryVerifyPfxExport(
+    pfxBytes: clientPfx,
+    password: pfxPassword,
+    originalCertificate: clientCertificate);
 
-using var serverPkcs12Cert = X509CertificateLoader.LoadPkcs12(serverPfx, pfxPassword, keyStorageFlags);
-if (!serverPkcs12Cert.HasPrivateKey)
+if (!clientPfxIsValid)
 {
-    Console.Error.WriteLine("Server PFX is missing private key.");
     return 1;
 }
 
-if (issuedServerCertificate.GetCertHashString(HashAlgorithmName.SHA256) != serverPkcs12Cert.GetCertHashString(HashAlgorithmName.SHA256))
+Console.WriteLine("Validating Server PFX.");
+bool serverPfxIsValid = TryVerifyPfxExport(
+    pfxBytes: serverPfx,
+    password: pfxPassword,
+    originalCertificate: serverCertificate);
+
+if (!serverPfxIsValid)
 {
-    Console.Error.WriteLine("Server certificate fingerprints do not match.");
     return 1;
 }
 
-using var serverExpiredPkcs12Cert = X509CertificateLoader.LoadPkcs12(expiredServerPfx, pfxPassword, keyStorageFlags);
-if (!serverExpiredPkcs12Cert.HasPrivateKey)
-{
-    Console.Error.WriteLine("Expired server PFX is missing its private key.");
-    return 1;
-}
+Console.WriteLine("Validating Expired Server PFX.");
+bool expiredServerPfxIsValid = TryVerifyPfxExport(
+    pfxBytes: expiredServerPfx,
+    password: pfxPassword,
+    originalCertificate: expiredServerCertificate);
 
-if (issuedExpiredServerCertificate.GetCertHashString(HashAlgorithmName.SHA256) != serverExpiredPkcs12Cert.GetCertHashString(HashAlgorithmName.SHA256))
+if (!expiredServerPfxIsValid)
 {
-    Console.Error.WriteLine("Expired server certificate fingerprints do not match.");
-    return 1;
-}
-
-using var clientPkcs12Cert = X509CertificateLoader.LoadPkcs12(clientPfx, pfxPassword, keyStorageFlags);
-if (!clientPkcs12Cert.HasPrivateKey)
-{
-    Console.Error.WriteLine("Client PFX is missing its private key.");
-    return 1;
-}
-
-if (issuedClientCertificate.GetCertHashString(HashAlgorithmName.SHA256) != clientPkcs12Cert.GetCertHashString(HashAlgorithmName.SHA256))
-{
-    Console.Error.WriteLine("Client certificate fingerprints do not match.");
     return 1;
 }
 
@@ -503,6 +495,26 @@ string ReadPassword(string prompt)
     Console.WriteLine();
 
     return sb.ToString();
+}
+
+bool TryVerifyPfxExport(byte[] pfxBytes, string password, X509Certificate2 originalCertificate)
+{
+    X509KeyStorageFlags keyStorageFlags = OperatingSystem.IsMacOS() ? X509KeyStorageFlags.DefaultKeySet : X509KeyStorageFlags.EphemeralKeySet;
+    
+    using var pkcs12Cert = X509CertificateLoader.LoadPkcs12(pfxBytes, password, keyStorageFlags);
+    if (!pkcs12Cert.HasPrivateKey)
+    {
+        Console.Error.WriteLine("PFX is missing private key.");
+        return false;
+    }
+
+    if (originalCertificate.GetCertHashString(HashAlgorithmName.SHA256) != pkcs12Cert.GetCertHashString(HashAlgorithmName.SHA256))
+    {
+        Console.Error.WriteLine("Certificate fingerprints do not match.");
+        return false;
+    }
+
+    return true;
 }
 
 void WriteNewFile(string path, byte[] contents, bool containerReadable)
