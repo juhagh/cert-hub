@@ -116,44 +116,7 @@ PrintCertificateSummary(
 // Create Server key and request
 using var serverKey = RSA.Create(3072);
 
-var serverRequest = new CertificateRequest(
-    subjectName: "CN=localhost",
-    key: serverKey,
-    hashAlgorithm: HashAlgorithmName.SHA256,
-    padding: RSASignaturePadding.Pkcs1
-);
-
-var serverBasicConstraints = new X509BasicConstraintsExtension(
-    certificateAuthority: false,
-    hasPathLengthConstraint: false,
-    pathLengthConstraint: 0,
-    critical: true);
-
-var serverKeyUsageExtension = new X509KeyUsageExtension(
-    keyUsages: X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
-    critical: true);
-
-var serverEnhancedKeyUsageExtension = new X509EnhancedKeyUsageExtension(
-    enhancedKeyUsages: new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") }, // Server authentication
-    critical: false);
-
-var sanBuilder = new SubjectAlternativeNameBuilder();
-sanBuilder.AddDnsName("localhost");
-var sanExtension = sanBuilder.Build();
-
-var serverSubjectKeyIdentifierExtension = new X509SubjectKeyIdentifierExtension(
-    key: serverRequest.PublicKey, 
-    critical: false);
-
-var serverAuthorityKeyIdentifierExtension =
-    X509AuthorityKeyIdentifierExtension.CreateFromSubjectKeyIdentifier(caSubjectKeyIdentifier);
-
-serverRequest.CertificateExtensions.Add(serverBasicConstraints);
-serverRequest.CertificateExtensions.Add(serverKeyUsageExtension);
-serverRequest.CertificateExtensions.Add(serverEnhancedKeyUsageExtension);
-serverRequest.CertificateExtensions.Add(sanExtension);
-serverRequest.CertificateExtensions.Add(serverSubjectKeyIdentifierExtension);
-serverRequest.CertificateExtensions.Add(serverAuthorityKeyIdentifierExtension);
+var serverRequest = CreateServerRequest(serverKey, caSubjectKeyIdentifier);
 
 using var issuedServerCertificate = serverRequest.Create(
     issuerCertificate: caCertificate,
@@ -542,6 +505,50 @@ CertificateRequest CreateRootCaRequest(RSA key)
     caRequest.CertificateExtensions.Add(authorityKeyIdentifierExtension);
 
     return caRequest;
+}
+
+CertificateRequest CreateServerRequest(RSA key, X509SubjectKeyIdentifierExtension issuerKeyIdentifier)
+{
+    var request = new CertificateRequest(
+        subjectName: "CN=localhost",
+        key: key,
+        hashAlgorithm: HashAlgorithmName.SHA256,
+        padding: RSASignaturePadding.Pkcs1
+    );
+
+    var serverBasicConstraints = new X509BasicConstraintsExtension(
+        certificateAuthority: false,
+        hasPathLengthConstraint: false,
+        pathLengthConstraint: 0,
+        critical: true);
+
+    var serverKeyUsageExtension = new X509KeyUsageExtension(
+        keyUsages: X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
+        critical: true);
+
+    var serverEnhancedKeyUsageExtension = new X509EnhancedKeyUsageExtension(
+        enhancedKeyUsages: new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") }, // Server authentication
+        critical: false);
+
+    var sanBuilder = new SubjectAlternativeNameBuilder();
+    sanBuilder.AddDnsName("localhost");
+    var sanExtension = sanBuilder.Build();
+
+    var serverSubjectKeyIdentifierExtension = new X509SubjectKeyIdentifierExtension(
+        key: request.PublicKey, 
+        critical: false);
+
+    var serverAuthorityKeyIdentifierExtension =
+        X509AuthorityKeyIdentifierExtension.CreateFromSubjectKeyIdentifier(issuerKeyIdentifier);
+
+    request.CertificateExtensions.Add(serverBasicConstraints);
+    request.CertificateExtensions.Add(serverKeyUsageExtension);
+    request.CertificateExtensions.Add(serverEnhancedKeyUsageExtension);
+    request.CertificateExtensions.Add(sanExtension);
+    request.CertificateExtensions.Add(serverSubjectKeyIdentifierExtension);
+    request.CertificateExtensions.Add(serverAuthorityKeyIdentifierExtension);
+
+    return request;
 }
 
 void WriteNewFile(string path, byte[] contents, bool containerReadable)
