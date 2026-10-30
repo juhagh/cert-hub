@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using CertHub.Application.Diagnostics;
 using CertHub.Domain.Diagnostics;
 using CertHub.Infrastructure.Tls;
@@ -850,6 +851,51 @@ public sealed class TlsProbeTests
         
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () => await sut.ProbeAsync(request));
         Assert.Equal("Client certificate path is empty or white space.", exception.Message);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WithClientCertificateWithoutPrivateKey_ThrowsInvalidOperationException()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        var clientCertificatePath = Path.GetTempFileName();
+
+        try
+        {
+            var certBytes = issuer.Export(X509ContentType.Cert);
+            using var clientCertificate = X509CertificateLoader.LoadCertificate(certBytes);
+            
+            var exportParameters = new PbeParameters(
+                encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
+                hashAlgorithm: HashAlgorithmName.SHA256,
+                iterationCount: 100_000);
+
+            var clientPfxPassword = "password";
+            var clientPfx = clientCertificate.ExportPkcs12(exportParameters, clientPfxPassword);
+            
+            File.WriteAllBytes(clientCertificatePath, clientPfx);
+            
+            var timeProvider = TimeProvider.System;
+            
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.System,
+                ClientCertificatePath = clientCertificatePath,
+                ClientCertificatePassword = clientPfxPassword
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+            
+            var request = new TlsProbeRequest("localhost", 8443);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () => await sut.ProbeAsync(request));
+            Assert.Equal("Client certificate does not include private key.", exception.Message);
+        }
+        finally
+        {
+            File.Delete(clientCertificatePath);
+        }
     }
     
     private static int GetUnusedLoopBackPort()
