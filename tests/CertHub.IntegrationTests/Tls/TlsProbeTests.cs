@@ -806,6 +806,51 @@ public sealed class TlsProbeTests
             File.Delete(certificateFile);
         }
     }
+
+    [Fact]
+    public async Task ProbeAsync_WithClientPasswordButNoCertificatePath_ThrowsInvalidOperationException()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(5),
+            TrustMode = TrustMode.System,
+            ClientCertificatePassword = "password",
+            ClientCertificatePath = null
+        };
+
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+        
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () => await sut.ProbeAsync(request));
+        Assert.Equal("Client certificate password provided, but no certificate path was configured.", exception.Message);
+    }
+    
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("\t")]
+    public async Task ProbeAsync_WithEmptyOrWhitespaceCertificatePath_ThrowsInvalidOperationException(string path)
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(5),
+            TrustMode = TrustMode.System,
+            ClientCertificatePassword = "password",
+            ClientCertificatePath = path
+        };
+
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+        
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () => await sut.ProbeAsync(request));
+        Assert.Equal("Client certificate path is empty or white space.", exception.Message);
+    }
     
     private static int GetUnusedLoopBackPort()
     {

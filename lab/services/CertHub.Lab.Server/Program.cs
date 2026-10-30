@@ -51,7 +51,7 @@ bool ValidateClientCertificate(X509Certificate2 certificate, X509Chain? chain, S
     
     using var validationChain = new X509Chain();
     validationChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-    validationChain.ChainPolicy.CustomTrustStore.Add(clientTrustRoot); // I get "Captured variable is disposed in the outer scope"
+    validationChain.ChainPolicy.CustomTrustStore.Add(clientTrustRoot);
     validationChain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
     validationChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
     validationChain.ChainPolicy.DisableCertificateDownloads = true;

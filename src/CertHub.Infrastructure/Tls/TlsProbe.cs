@@ -526,5 +526,12 @@ public sealed class TlsProbe : ITlsProbe
                     throw new InvalidOperationException("CustomRoots TrustMode certificate path cannot be empty." );
             }
         }
+        
+        // mTLS related validation
+        if (_options.ClientCertificatePath is null && _options.ClientCertificatePassword is not null)
+            throw new InvalidOperationException("Client certificate password provided, but no certificate path was configured.");
+        
+        if (_options.ClientCertificatePath is not null && string.IsNullOrWhiteSpace(_options.ClientCertificatePath))
+            throw new InvalidOperationException("Client certificate path is empty or white space.");
     }
 }
