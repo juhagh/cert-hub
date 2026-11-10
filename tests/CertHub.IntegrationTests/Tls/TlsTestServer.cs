@@ -21,9 +21,12 @@ public sealed class TlsTestServer : IAsyncDisposable
         new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource<bool> _clientAuthenticationResult =
         new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<string> _presentedClientFingerprint =
+        new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public Task<string> AuthenticatedClientFingerprint => _authenticatedClientFingerprint.Task;
     public Task<bool> ClientAuthenticationResult => _clientAuthenticationResult.Task;
+    public Task<string> PresentedClientFingerprint => _presentedClientFingerprint.Task;
     
     public TlsTestServer(
         X509Certificate2? issuer = null,
@@ -309,6 +312,8 @@ public sealed class TlsTestServer : IAsyncDisposable
         }
 
         using var clientCertificate = new X509Certificate2(certificate);
+
+        _presentedClientFingerprint.TrySetResult(clientCertificate.GetCertHashString(HashAlgorithmName.SHA256));
         
         using var validationChain = new X509Chain();
         validationChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;

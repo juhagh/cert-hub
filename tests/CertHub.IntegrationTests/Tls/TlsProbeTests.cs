@@ -1065,6 +1065,71 @@ public sealed class TlsProbeTests
         }
     }
     
+    [Fact]
+    public async Task ProbeAsync_WithUntrustedClientCertificate_MtlsServerRejectsClient()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        using var untrustedIssuer = TlsTestServer.CreateCertificateAuthority();
+        using var clientCertificate = TlsTestServer.CreateIssuedClientCertificate(untrustedIssuer);
+
+        var caPemFile = Path.GetTempFileName();
+        var clientPfxFile = Path.GetTempFileName();
+
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(caPemFile, publicCert);
+            
+            var exportParameters = new PbeParameters(
+                encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
+                hashAlgorithm: HashAlgorithmName.SHA256,
+                iterationCount: 100_000);
+            
+            var clientPfxPassword = "password";
+            var clientPfx = clientCertificate.ExportPkcs12(exportParameters, clientPfxPassword);
+            
+            File.WriteAllBytes(clientPfxFile, clientPfx);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [caPemFile],
+                ClientCertificatePath = clientPfxFile,
+                ClientCertificatePassword = clientPfxPassword
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+
+            await using TlsTestServer testServer = new TlsTestServer(issuer: issuer, clientTrustRoot: issuer);
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            var clientAuthenticationResult = await testServer.ClientAuthenticationResult.WaitAsync(TimeSpan.FromSeconds(5));
+            var presentedClientFingerprint = await testServer.PresentedClientFingerprint.WaitAsync(TimeSpan.FromSeconds(5));
+            
+            Assert.False(clientAuthenticationResult);
+            Assert.Equal(clientCertificate.GetCertHashString(HashAlgorithmName.SHA256), presentedClientFingerprint);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Passed, result.CertificateValidation);
+            
+            Assert.NotNull(result.Connection);
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.RemoteIpAddress));
+            Assert.Equal(TrustMode.CustomRoots, result.TrustContext.Mode);
+            Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+        }
+        finally
+        {
+            File.Delete(caPemFile);
+            File.Delete(clientPfxFile);
+        }
+    }
+    
     private static int GetUnusedLoopBackPort()
     {
         using var listener = new TcpListener(localaddr: IPAddress.Loopback, port: 0);
