@@ -975,7 +975,49 @@ public sealed class TlsProbeTests
             File.Delete(clientPfxFile);
         }
     }
-    
+
+    [Fact]
+    public async Task ProbeAsync_WithIncorrectClientCertificatePassword_ThrowsCryptographicException()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        using var clientCertificate = TlsTestServer.CreateIssuedClientCertificate(issuer);
+        
+        var clientPfxFile = Path.GetTempFileName();
+
+        try
+        {
+            var exportParameters = new PbeParameters(
+                encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
+                hashAlgorithm: HashAlgorithmName.SHA256,
+                iterationCount: 100_000);
+
+            var clientPfxPassword = "password";
+            var clientPfx = clientCertificate.ExportPkcs12(exportParameters, clientPfxPassword);
+
+            File.WriteAllBytes(clientPfxFile, clientPfx);
+
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.System,
+                ClientCertificatePath = clientPfxFile,
+                ClientCertificatePassword = "wrong-password"
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+            
+            var request = new TlsProbeRequest("localhost", 8443);
+
+            await Assert.ThrowsAnyAsync<CryptographicException>(async () => await sut.ProbeAsync(request));
+        }
+        finally
+        {
+            File.Delete(clientPfxFile);
+        }
+    }
+
     private static int GetUnusedLoopBackPort()
     {
         using var listener = new TcpListener(localaddr: IPAddress.Loopback, port: 0);
