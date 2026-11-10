@@ -12,15 +12,18 @@ Current capabilities include:
 
 - DNS resolution and sequential TCP connection attempts across resolved addresses.
 - Server TLS authentication with enforced certificate validation using system trust or configured custom root CAs.
+- Optional operator-configured client PFX credentials for TLS client authentication, including passwordless PFX files.
 - Reports distinguishing DNS, TCP, TLS authentication and certificate-validation outcomes.
 - Certificate subject, issuer, validity dates and SHA-256 fingerprint capture, including when validation rejects the certificate.
 - Hostname and certificate-chain validation findings with supporting platform error details.
 - Dedicated `CERT_EXPIRED` and `CERT_NOT_YET_VALID` findings based on the server certificate dates and report evaluation time.
 - Connected IP address, TCP-stage duration and negotiated TLS protocol and cipher suite when authentication succeeds.
-- A shared diagnostic timeout and propagation of caller cancellation.
+- A shared timeout across network diagnostic stages and propagation of caller cancellation. Client credential loading occurs before the timeout starts.
 - HTTP request validation, target-policy enforcement and readable enum values in JSON responses.
 
 The probe sends no HTTP request or other application data to the target. Revocation checking and automatic downloads of missing issuer certificates are disabled for this milestone.
+
+`CertificateValidation` describes the server certificate. `TlsAuthentication: Passed` means the client-side authentication operation completed; it does not confirm that the server accepted a client certificate or granted application access. A configured client credential may not be selected or sent. The report currently contains no client-certificate presentation or remote-acceptance evidence.
 
 A diagnostic response can return HTTP `200` while reporting a failed target connection. The status indicates that a report was returned; the report's outcomes describe the target.
 
@@ -37,7 +40,7 @@ dotnet test tests/CertHub.Domain.Tests/CertHub.Domain.Tests.csproj
 dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj
 ```
 
-The Domain and integration suites currently contain 76 test cases: 5 Domain cases and 71 integration cases. Coverage includes:
+The integration suite currently contains 82 test cases, alongside the Domain certificate-validity tests. Coverage includes:
 
 - DNS resolution failure, empty address results, timeout reporting and caller cancellation during resolution.
 - TCP connection refusal and fallback to a second address while preserving the first connection failure finding.
@@ -45,6 +48,11 @@ The Domain and integration suites currently contain 76 test cases: 5 Domain case
 - Certificate-validity rules before, within and at both boundaries of the validity window.
 - Rejection of expired and not-yet-valid server certificates issued by a trusted test CA, with certificate evidence and dedicated validity findings preserved.
 - Request validation, target policy and HTTP endpoint behaviour.
+- Client credential configuration, rejection of PFX files without a private key and incorrect PFX passwords.
+- Successful client authentication using protected and passwordless PFX files, confirmed by the server-observed client certificate fingerprint.
+- Server-side rejection of missing client credentials and of a presented client certificate issued by an untrusted CA.
+
+The mTLS tests use server-side observations to distinguish certificate presentation from successful authentication. These observations belong to the test harness; the production probe cannot infer remote acceptance from client-side completion alone.
 
 Tests use in-process API hosting, loopback servers, dynamically assigned ports and temporary certificates. Endpoint tests use a stub probe; connection tests exercise real TCP/TLS behaviour. Tests do not require Docker, externally hosted target services or changes to the machine's trust store.
 
@@ -75,7 +83,7 @@ curl --silent --show-error --include \
 
 The default probe uses system trust, so rejection of the locally issued lab certificate is expected unless its CA is trusted under the configured policy. Allowing a target and trusting its certificate are separate settings.
 
-See the [TLS diagnostics API guide](docs/api/tls-diagnostics.md) for request rules, response examples, allowlist configuration, custom-root trust and timeout behaviour.
+See the [TLS diagnostics API guide](docs/api/tls-diagnostics.md) for request rules, response examples, allowlist configuration, custom-root trust, client PFX configuration and timeout behaviour.
 
 The API currently has no authentication or rate limiting. Its hostname-and-port allowlist does not restrict resolved IP addresses. Public deployment requires further access controls and network-target policy.
 
@@ -103,7 +111,7 @@ The expired-certificate scenario uses `lab/compose.expired.yaml` alongside the b
 
 The lab is separate from the integration-test servers. Both expired and not-yet-valid certificates are covered by integration tests. The optional mTLS lab requires a client certificate validated against an explicitly configured lab CA. Manual checks on macOS demonstrated rejection without a client certificate, acceptance with a trusted client certificate and rejection with a certificate issued by a different CA. See the mTLS scenario for commands and observed results.
 
-The CertHub probe currently performs server TLS diagnostics only; it does not yet supply client credentials or diagnose mTLS acceptance. A Docker lab scenario for not-yet-valid certificates remains planned.
+The CertHub probe can now load an optional client PFX and make it available during TLS authentication. It continues to validate the server certificate independently. Remote client-certificate acceptance is not established by the current report; see the API guide for configuration and reporting limits. A Docker lab scenario for not-yet-valid certificates remains planned.
 
 ## Architecture
 
@@ -130,7 +138,7 @@ Design documentation:
 - Improve diagnostic evidence and report presentation as further scenarios are added.
 - Define access controls and resolved-address restrictions before broader deployment.
 
-Later milestones include mTLS diagnostics, persistent history, scheduled monitoring, expiry alerts and Azure deployment.
+Later milestones include richer client-authentication evidence, persistent history, scheduled monitoring, expiry alerts and Azure deployment.
 
 ## Repository Structure
 
