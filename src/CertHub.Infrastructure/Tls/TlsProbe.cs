@@ -32,6 +32,17 @@ public sealed class TlsProbe : ITlsProbe
         
         ValidateOptions();
         
+        X509KeyStorageFlags keyStorageFlags = OperatingSystem.IsMacOS() ? X509KeyStorageFlags.DefaultKeySet : X509KeyStorageFlags.EphemeralKeySet;
+
+        using X509Certificate2? clientCertificate = _options.ClientCertificatePath is not null
+            ? X509CertificateLoader.LoadPkcs12FromFile(_options.ClientCertificatePath,
+                _options.ClientCertificatePassword,
+                keyStorageFlags)
+            : null;
+
+        if (clientCertificate is not null && !clientCertificate.HasPrivateKey)
+            throw new InvalidOperationException("Client certificate does not include private key.");
+        
         var attemptedAt = _timeProvider.GetUtcNow();
 
         using var timeoutCts = new CancellationTokenSource(_options.Timeout, _timeProvider);
@@ -181,10 +192,11 @@ public sealed class TlsProbe : ITlsProbe
 
                 // TLS Negotiation
                 await using var sslStream = new SslStream(connectedClient.GetStream(), leaveInnerStreamOpen: true);
-            
+                
                 SslClientAuthenticationOptions authenticationOptions = new()
                 {
-                    TargetHost = request.Hostname
+                    TargetHost = request.Hostname,
+                    ClientCertificates = clientCertificate is not null ? [clientCertificate] : null
                 };
 
                 X509ChainTrustMode trustMode = _options.TrustMode == TrustMode.System
@@ -526,5 +538,12 @@ public sealed class TlsProbe : ITlsProbe
                     throw new InvalidOperationException("CustomRoots TrustMode certificate path cannot be empty." );
             }
         }
+        
+        // mTLS related validation
+        if (_options.ClientCertificatePath is null && _options.ClientCertificatePassword is not null)
+            throw new InvalidOperationException("Client certificate password provided, but no certificate path was configured.");
+        
+        if (_options.ClientCertificatePath is not null && string.IsNullOrWhiteSpace(_options.ClientCertificatePath))
+            throw new InvalidOperationException("Client certificate path is empty or white space.");
     }
 }

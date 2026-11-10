@@ -1,6 +1,6 @@
 # TLS diagnostics API
 
-CertHub runs a server TLS diagnostic against an explicitly allowed hostname and port. It reports DNS resolution, TCP connectivity, TLS authentication and certificate-validation outcomes, preserving evidence collected before a failure.
+CertHub runs a TLS diagnostic against an explicitly allowed hostname and port, with enforced server validation and optional operator-configured client PFX credentials. It reports DNS resolution, TCP connectivity, TLS authentication and certificate-validation outcomes, preserving evidence collected before a failure.
 
 The probe sends no HTTP request or other application data to the target. The HTTP API is the entry point that starts the diagnostic; it is separate from the target connection being inspected.
 
@@ -43,6 +43,8 @@ curl --silent --show-error --include \
 |---|---|
 | `hostname` | Required ASCII hostname, up to 253 characters. Each dot-separated label must contain 1–63 characters, start and end with a letter or digit, and otherwise contain letters, digits or hyphens. |
 | `port` | Integer from 1 to 65535. |
+
+Certificate paths, passwords and client credentials are not request fields. They are configured by the operator for the probe.
 
 Single-label names such as `localhost` are accepted. IP literals, names containing only digits and dots, trailing dots, underscores, whitespace, schemes, paths and embedded ports are rejected. Unicode hostnames are not supported by this initial contract.
 
@@ -110,6 +112,16 @@ A failed address attempt can produce a finding even when a later address connect
 
 Use finding codes for identification and messages for explanatory details. Platform error wording and chain-status details can vary. See the [diagnostic report design](../architecture/diagnostic-report.md) for the report model.
 
+### Client authentication and report interpretation
+
+`certificateValidation` and `certificate` describe the server certificate. The probe validates that certificate independently of any client credential it supplies.
+
+`tlsAuthentication: Passed` means `AuthenticateAsClientAsync` completed successfully from the probe's perspective. It does not establish that the remote server accepted the client certificate or granted application access. A configured certificate is available for selection; configuration alone does not prove it was sent.
+
+Depending on protocol, platform and timing, server rejection of a missing or untrusted client certificate may become observable only during subsequent communication. The current probe returns after authentication and sends no application data. A report can therefore show client-side TLS completion while the server rejects client authentication. The report does not currently contain client-certificate presentation or remote-acceptance evidence.
+
+Controlled integration tests observe the server directly to confirm presentation, acceptance and rejection. Those observations are not available to the production API. See the [report design](../architecture/diagnostic-report.md) for the precise outcome definitions.
+
 ### Certificate validity findings
 
 When a server certificate is available, CertHub compares its validity dates with `trustContext.evaluationTime`, the same timestamp used for the chain policy's verification time.
@@ -172,7 +184,7 @@ The base configuration has an empty allowlist, which denies all targets. Develop
 
 ## Trust and timeout configuration
 
-The probe reads the `TlsProbe` section. Its default trust mode is `System` and its default overall timeout is ten seconds. The configured timeout must be greater than zero and no more than sixty seconds.
+The probe reads the `TlsProbe` section. Its default trust mode is `System` and its default network diagnostic timeout is ten seconds. The configured timeout must be greater than zero and no more than sixty seconds.
 
 ### Local lab settings with User Secrets
 
@@ -208,7 +220,72 @@ In custom-root mode, the supplied roots define the trust anchors for the check. 
 
 Certificate validation remains enforced in both modes. Revocation checking and automatic downloads of missing issuer certificates are disabled. A successful result therefore means acceptance under this configured policy, not a complete assessment of every certificate risk.
 
-One shared timeout covers the diagnostic stages. Timeout outcomes are returned as diagnostic reports. Caller cancellation propagates instead of being converted into a target failure. Configuration errors and unexpected application errors are not diagnostic results; the API does not yet define a dedicated response contract for them.
+One shared timeout covers the network diagnostic stages. The budget starts after client PFX loading. Synchronous certificate-file loading is not cancellable through this timeout. Timeout outcomes are returned as diagnostic reports. Caller cancellation propagates instead of being converted into a target failure. Configuration errors and unexpected application errors are not diagnostic results; the API does not yet define a dedicated response contract for them.
+
+### Optional client PFX configuration
+
+Client credentials are separate from server trust and target allowlisting. To check the mTLS lab, the probe must trust the lab server's CA, and the server must trust the CA that issued the supplied client credential.
+
+| Option | Meaning |
+|---|---|
+| `TlsProbe:ClientCertificatePath` | Optional PFX path accessible to the API process. Null means no client credential is configured. Empty or whitespace paths are rejected. Relative paths resolve against the process working directory. |
+| `TlsProbe:ClientCertificatePassword` | Password used to load that PFX. Null or empty is permitted for a passwordless PFX. A non-null password without a configured path is rejected. |
+
+The loaded PFX must contain a certificate with a private key. Loading and the private-key check occur before networking. The probe owns and disposes the imported certificate for each attempt. Missing or unreadable files, incorrect passwords and a missing private key are local configuration errors; they propagate as exceptions rather than target findings. The API currently has no dedicated response contract for these errors.
+
+For local development, set the path through User Secrets, replacing this example with the actual absolute path:
+
+```bash
+dotnet user-secrets set "TlsProbe:ClientCertificatePath" \
+  "/absolute/path/to/CertHub/lab/certificates/generated/client.pfx" \
+  --project src/CertHub.Api
+```
+
+Keep the password out of tracked settings. The lab generator uses the same confirmed PFX password for its client and server bundles. In the terminal where you will start the API, after supplying `CERTHUB_LAB_PFX_PASSWORD` as described in the [lab setup guide](../../lab/README.md), Bash/zsh users can pass it to the probe through configuration:
+
+```bash
+export TlsProbe__ClientCertificatePassword="${CERTHUB_LAB_PFX_PASSWORD:?Set the lab PFX password first}"
+```
+
+PowerShell equivalent, after setting the lab password in that terminal:
+
+```powershell
+if ([string]::IsNullOrEmpty($env:CERTHUB_LAB_PFX_PASSWORD)) { throw 'Set the lab PFX password first' }
+$env:TlsProbe__ClientCertificatePassword = $env:CERTHUB_LAB_PFX_PASSWORD
+```
+
+These commands reuse an existing environment value without placing the literal password in command history. Environment values remain plain text. Set the variable in the API's launching terminal; setting it only in a different Compose terminal does not configure the API. If the PFX uses a different password, supply its actual password through your local configuration instead.
+
+After configuring custom-root server trust as shown above, enable the lab's mTLS mode from the repository root:
+
+```bash
+docker compose -f lab/compose.yaml -f lab/compose.mtls.yaml up --build -d
+```
+
+Start or restart the API from the terminal containing its password setting:
+
+```bash
+dotnet run --project src/CertHub.Api/CertHub.Api.csproj --launch-profile https
+```
+
+Call `POST /diagnostics/tls` with the same hostname-and-port request as before. A trusted client credential enables the authentication attempt; the response's TLS outcome still has the client-side interpretation described above. No additional client-authentication outcome is returned. For the independently observed Docker/curl acceptance and rejection cases, see the [mTLS lab scenario](../../lab/scenarios/05-mutual-tls.md).
+
+The single configured client credential is available on all allowed diagnostic attempts. This milestone does not provide per-target credential selection or accept credentials from API callers.
+
+To return to probing without a client credential, remove both settings from every configuration source you used. For the User Secrets path and environment password shown here:
+
+```bash
+dotnet user-secrets remove "TlsProbe:ClientCertificatePath" --project src/CertHub.Api
+unset TlsProbe__ClientCertificatePassword
+```
+
+In PowerShell, replace `unset` with `Remove-Item Env:TlsProbe__ClientCertificatePassword`. If you also set the password through User Secrets, remove `TlsProbe:ClientCertificatePassword` there. Restart the API after cleanup. Server trust settings are independent and can remain in place.
+
+Stop the mTLS lab while its PFX password is still configured:
+
+```bash
+docker compose -f lab/compose.yaml -f lab/compose.mtls.yaml down
+```
 
 ### Return to default system trust
 
@@ -222,7 +299,7 @@ dotnet user-secrets remove "TlsProbe:RootCertificatePaths:0" --project src/CertH
 
 Remove any other temporary `TlsProbe` overrides you set for this exercise, then restart the API. With no custom-root settings supplied by other configuration sources, the probe returns to its default system trust. Check that the report shows `System` and configuration ID `system`. This changes the probe's trust policy; it does not remove certificates from the operating system trust store.
 
-User Secrets configure the API only. Docker Compose still obtains the lab server's PFX password from `CERTHUB_LAB_PFX_PASSWORD` in its calling environment.
+API User Secrets and `TlsProbe__...` environment values configure the probe. Docker Compose independently obtains the lab server's PFX password from `CERTHUB_LAB_PFX_PASSWORD` in its calling environment.
 
 ## Current deployment scope
 
@@ -236,5 +313,7 @@ Endpoint integration tests use an in-process API and a stub probe to verify inva
 dotnet test tests/CertHub.Domain.Tests/CertHub.Domain.Tests.csproj
 dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj
 ```
+
+Client credential tests cover invalid configuration, missing private keys and incorrect PFX passwords. Loopback mTLS tests verify successful authentication with protected, empty-password and null-password PFX exports, using the server-observed authenticated fingerprint. Negative tests verify server rejection without a credential and with a presented certificate from another CA; the latter also checks its presented fingerprint. Client-side TLS failure timing is not required to match across platforms.
 
 These tests require neither Docker nor changes to the machine's trust store.

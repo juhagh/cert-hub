@@ -7,12 +7,13 @@ CertHub reports the outcome of a TLS connection attempt and the evidence availab
 A failed connection is an expected diagnostic result. The report distinguishes observed failures from possible causes
 and preserves evidence gathered before failure.
 
-## Initial Scope
+## Current Scope
 
-The first version checks a DNS hostname and port, such as `localhost:8443`.
+CertHub checks a DNS hostname and port, such as `localhost:8443`, without sending an HTTP request or other application data.
 
-It performs server TLS authentication without sending an HTTP request or other application data. Client certificates and
-IP-address targets are outside the initial scope.
+The probe optionally loads an operator-configured client PFX for TLS client authentication. Server trust and client credentials are configured independently. API callers do not supply certificate paths or passwords.
+
+IP-address targets remain outside the current scope.
 
 ## Target
 
@@ -36,12 +37,24 @@ Each check has one of three outcomes:
 |------------------------|----------------------------------------------------------|--------------------------------------------------------|----------------------------------------|
 | DNS resolution         | At least one address was resolved                        | Resolution failed                                      | Resolution was not attempted           |
 | TCP connection         | A connection was established                             | The connection attempt failed                          | No connection was attempted            |
-| TLS authentication     | Authentication completed under the configured policy     | Authentication failed, including certificate rejection | TCP connectivity was unavailable       |
-| Certificate validation | The certificate was accepted under the configured policy | Validation detected one or more errors                 | Certificate validation was not reached |
+| TLS authentication     | The client-side TLS authentication operation completed under the configured policy     | Authentication failed, including certificate rejection | TCP connectivity was unavailable       |
+| Certificate validation | The server certificate was accepted under the configured policy | Validation detected one or more errors                 | Certificate validation was not reached |
 
-Certificate validation occurs during TLS authentication. If a certificate is rejected, both checks can be Failed.
+Certificate validation occurs during TLS authentication. If the server certificate is rejected, both checks can be Failed.
 
 A failed check does not erase evidence already collected.
+
+## Client Authentication Evidence
+
+A configured client certificate is available for TLS credential selection. Configuration alone does not establish that the certificate was sent.
+
+Successful client-side TLS authentication does not establish that the server accepted the client certificate. Depending on the negotiated protocol and platform, server rejection may become observable only during subsequent communication. CertHub currently ends its inspection after the authentication operation.
+
+Consequently, `TlsAuthentication: Passed` must not be interpreted as confirmed mutual authentication or application access. `CertificateValidation` describes the server certificate, independently of the server’s decision about the client.
+
+Integration tests use server-side observations to verify presentation, acceptance and rejection of client certificates. Those observations are test evidence and are unavailable to the production probe.
+
+Unreadable PFX files, incorrect passwords and credentials without a private key are local configuration failures. They propagate as exceptions rather than becoming target diagnostic findings.
 
 ## Evidence
 
@@ -112,7 +125,7 @@ Initial finding categories include:
 | DNS         | `DNS_RESOLUTION_FAILED`, `DNS_TIMEOUT`                               |
 | TCP         | `TCP_CONNECTION_FAILED`, `TCP_TIMEOUT`                               |
 | TLS         | `TLS_AUTHENTICATION_FAILED`, `TLS_CONNECTION_FAILED`, `TLS_TIMEOUT`  |
-| Certificate | `CERT_NOT_PRESENTED`, `CERT_HOSTNAME_MISMATCH`, `CERT_CHAIN_INVALID` |
+| Certificate | `CERT_NOT_PRESENTED`, `CERT_HOSTNAME_MISMATCH`, `CERT_CHAIN_INVALID`, `CERT_EXPIRED`, `CERT_NOT_YET_VALID` |
 
 Incomplete chains and invalid usage currently appear as platform details under CERT_CHAIN_INVALID, rather than dedicated
 codes.
@@ -126,8 +139,7 @@ cause.
 
 The diagnostic attempt has a bounded timeout.
 
-Timeout value can range from greater than zero up to 60 seconds and is shared across the entire probe attempt rather
-than per stage.
+The timeout budget starts after client credential loading and is shared across the network diagnostic stages. Synchronous certificate-file loading is not cancellable through this timeout.
 
 When the probe's timeout expires, the report identifies the stage where it occurred and preserves existing evidence.
 
@@ -146,8 +158,6 @@ These examples describe expected behaviour with validation enforced.
 | TLS failure before validation | Passed | Passed       | Failed             | NotEvaluated           |
 | TCP connection refused        | Passed | Failed       | NotEvaluated       | NotEvaluated           |
 | DNS resolution failure        | Failed | NotEvaluated | NotEvaluated       | NotEvaluated           |
-
-Expiry, DNS failure and TCP refusal still require dedicated tests.
 
 Certificate metadata can remain available when certificate validation fails. Negotiated connection information is
 recorded only when the probe can establish it.

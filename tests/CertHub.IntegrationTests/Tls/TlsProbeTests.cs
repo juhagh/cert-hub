@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using CertHub.Application.Diagnostics;
 using CertHub.Domain.Diagnostics;
 using CertHub.Infrastructure.Tls;
@@ -631,7 +632,7 @@ public sealed class TlsProbeTests
 
             var options = Options.Create(localSettings);
 
-            var addresses = new IPAddress[] { IPAddress.IPv6Loopback, IPAddress.Loopback };
+            var addresses = new[] { IPAddress.IPv6Loopback, IPAddress.Loopback };
             var sut = new TlsProbe(timeProvider, options, new FixedHostResolver(addresses));
 
             await using TlsTestServer testServer = new TlsTestServer(issuer);
@@ -804,6 +805,331 @@ public sealed class TlsProbeTests
         finally
         {
             File.Delete(certificateFile);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WithClientPasswordButNoCertificatePath_ThrowsInvalidOperationException()
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(5),
+            TrustMode = TrustMode.System,
+            ClientCertificatePassword = "password",
+            ClientCertificatePath = null
+        };
+
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+        
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () => await sut.ProbeAsync(request));
+        Assert.Equal("Client certificate password provided, but no certificate path was configured.", exception.Message);
+    }
+    
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("\t")]
+    public async Task ProbeAsync_WithEmptyOrWhitespaceCertificatePath_ThrowsInvalidOperationException(string path)
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(5),
+            TrustMode = TrustMode.System,
+            ClientCertificatePassword = "password",
+            ClientCertificatePath = path
+        };
+
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+        
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () => await sut.ProbeAsync(request));
+        Assert.Equal("Client certificate path is empty or white space.", exception.Message);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WithClientCertificateWithoutPrivateKey_ThrowsInvalidOperationException()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        var clientCertificatePath = Path.GetTempFileName();
+
+        try
+        {
+            var certBytes = issuer.Export(X509ContentType.Cert);
+            using var clientCertificate = X509CertificateLoader.LoadCertificate(certBytes);
+            
+            var exportParameters = new PbeParameters(
+                encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
+                hashAlgorithm: HashAlgorithmName.SHA256,
+                iterationCount: 100_000);
+
+            var clientPfxPassword = "password";
+            var clientPfx = clientCertificate.ExportPkcs12(exportParameters, clientPfxPassword);
+            
+            File.WriteAllBytes(clientCertificatePath, clientPfx);
+            
+            var timeProvider = TimeProvider.System;
+            
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.System,
+                ClientCertificatePath = clientCertificatePath,
+                ClientCertificatePassword = clientPfxPassword
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+            
+            var request = new TlsProbeRequest("localhost", 8443);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () => await sut.ProbeAsync(request));
+            Assert.Equal("Client certificate does not include private key.", exception.Message);
+        }
+        finally
+        {
+            File.Delete(clientCertificatePath);
+        }
+    }
+
+    [Theory]
+    [InlineData("password")]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task ProbeAsync_WithTrustedClientCertificate_AuthenticatesToMtlsServer(string? password)
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        using var clientCertificate = TlsTestServer.CreateIssuedClientCertificate(issuer);
+
+        var caPemFile = Path.GetTempFileName();
+        var clientPfxFile = Path.GetTempFileName();
+
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(caPemFile, publicCert);
+            
+            var exportParameters = new PbeParameters(
+                encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
+                hashAlgorithm: HashAlgorithmName.SHA256,
+                iterationCount: 100_000);
+            
+            var clientPfxPassword = password;
+            var clientPfx = clientCertificate.ExportPkcs12(exportParameters, clientPfxPassword);
+            
+            File.WriteAllBytes(clientPfxFile, clientPfx);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [caPemFile],
+                ClientCertificatePath = clientPfxFile,
+                ClientCertificatePassword = clientPfxPassword
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+
+            await using TlsTestServer testServer = new TlsTestServer(issuer: issuer, clientTrustRoot: issuer);
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            var fingerprint = await testServer.AuthenticatedClientFingerprint.WaitAsync(TimeSpan.FromSeconds(5));
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Passed, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.Passed, result.CertificateValidation);
+            
+            Assert.Equal(clientCertificate.GetCertHashString(HashAlgorithmName.SHA256), fingerprint);
+            
+            Assert.NotNull(result.Connection);
+            Assert.NotNull(result.Certificate);
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.RemoteIpAddress));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Issuer));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Subject));
+            Assert.False(string.IsNullOrWhiteSpace(result.Certificate.Sha256Fingerprint));
+            
+            Assert.NotEqual(default, result.Certificate.NotAfter);
+            Assert.NotEqual(default, result.Certificate.NotBefore);
+
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.TlsProtocol));
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.CipherSuite));
+
+            Assert.True(result.Certificate.NotAfter > result.Certificate.NotBefore);
+            Assert.Equal(TrustMode.CustomRoots, result.TrustContext.Mode);
+            Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+            Assert.Contains(issuer.GetCertHashString(HashAlgorithmName.SHA256), result.TrustContext.RootSha256Fingerprints);
+            Assert.DoesNotContain(result.Findings, f => f.Code.StartsWith("CERT_"));
+            Assert.DoesNotContain(result.Findings, f => f.Code.StartsWith("TLS_"));
+        }
+        finally
+        {
+            File.Delete(caPemFile);
+            File.Delete(clientPfxFile);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WithIncorrectClientCertificatePassword_ThrowsCryptographicException()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        using var clientCertificate = TlsTestServer.CreateIssuedClientCertificate(issuer);
+        
+        var clientPfxFile = Path.GetTempFileName();
+
+        try
+        {
+            var exportParameters = new PbeParameters(
+                encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
+                hashAlgorithm: HashAlgorithmName.SHA256,
+                iterationCount: 100_000);
+
+            var clientPfxPassword = "password";
+            var clientPfx = clientCertificate.ExportPkcs12(exportParameters, clientPfxPassword);
+
+            File.WriteAllBytes(clientPfxFile, clientPfx);
+
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.System,
+                ClientCertificatePath = clientPfxFile,
+                ClientCertificatePassword = "wrong-password"
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+            
+            var request = new TlsProbeRequest("localhost", 8443);
+
+            await Assert.ThrowsAnyAsync<CryptographicException>(async () => await sut.ProbeAsync(request));
+        }
+        finally
+        {
+            File.Delete(clientPfxFile);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WithoutClientCertificate_MtlsServerRejectsClient()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+
+        var caPemFile = Path.GetTempFileName();
+
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(caPemFile, publicCert);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [caPemFile]
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+
+            await using TlsTestServer testServer = new TlsTestServer(issuer: issuer, clientTrustRoot: issuer);
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            var clientAuthenticationResult = await testServer.ClientAuthenticationResult.WaitAsync(TimeSpan.FromSeconds(5));
+            
+            Assert.False(clientAuthenticationResult);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Passed, result.CertificateValidation);
+            
+            Assert.NotNull(result.Connection);
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.RemoteIpAddress));
+            Assert.Equal(TrustMode.CustomRoots, result.TrustContext.Mode);
+            Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+        }
+        finally
+        {
+            File.Delete(caPemFile);
+        }
+    }
+    
+    [Fact]
+    public async Task ProbeAsync_WithUntrustedClientCertificate_MtlsServerRejectsClient()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        using var untrustedIssuer = TlsTestServer.CreateCertificateAuthority();
+        using var clientCertificate = TlsTestServer.CreateIssuedClientCertificate(untrustedIssuer);
+
+        var caPemFile = Path.GetTempFileName();
+        var clientPfxFile = Path.GetTempFileName();
+
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(caPemFile, publicCert);
+            
+            var exportParameters = new PbeParameters(
+                encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
+                hashAlgorithm: HashAlgorithmName.SHA256,
+                iterationCount: 100_000);
+            
+            var clientPfxPassword = "password";
+            var clientPfx = clientCertificate.ExportPkcs12(exportParameters, clientPfxPassword);
+            
+            File.WriteAllBytes(clientPfxFile, clientPfx);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [caPemFile],
+                ClientCertificatePath = clientPfxFile,
+                ClientCertificatePassword = clientPfxPassword
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+
+            await using TlsTestServer testServer = new TlsTestServer(issuer: issuer, clientTrustRoot: issuer);
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            var clientAuthenticationResult = await testServer.ClientAuthenticationResult.WaitAsync(TimeSpan.FromSeconds(5));
+            var presentedClientFingerprint = await testServer.PresentedClientFingerprint.WaitAsync(TimeSpan.FromSeconds(5));
+            
+            Assert.False(clientAuthenticationResult);
+            Assert.Equal(clientCertificate.GetCertHashString(HashAlgorithmName.SHA256), presentedClientFingerprint);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Passed, result.CertificateValidation);
+            
+            Assert.NotNull(result.Connection);
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.RemoteIpAddress));
+            Assert.Equal(TrustMode.CustomRoots, result.TrustContext.Mode);
+            Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+        }
+        finally
+        {
+            File.Delete(caPemFile);
+            File.Delete(clientPfxFile);
         }
     }
     
