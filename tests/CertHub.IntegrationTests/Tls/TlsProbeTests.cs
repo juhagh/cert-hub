@@ -898,8 +898,11 @@ public sealed class TlsProbeTests
         }
     }
 
-    [Fact]
-    public async Task ProbeAsync_WithTrustedClientCertificate_AuthenticatesToMtlsServer()
+    [Theory]
+    [InlineData("password")]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task ProbeAsync_WithTrustedClientCertificate_AuthenticatesToMtlsServer(string? password)
     {
         using var issuer = TlsTestServer.CreateCertificateAuthority();
         using var clientCertificate = TlsTestServer.CreateIssuedClientCertificate(issuer);
@@ -917,7 +920,7 @@ public sealed class TlsProbeTests
                 hashAlgorithm: HashAlgorithmName.SHA256,
                 iterationCount: 100_000);
             
-            var clientPfxPassword = "password";
+            var clientPfxPassword = password;
             var clientPfx = clientCertificate.ExportPkcs12(exportParameters, clientPfxPassword);
             
             File.WriteAllBytes(clientPfxFile, clientPfx);
