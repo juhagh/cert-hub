@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
@@ -18,8 +19,11 @@ public sealed class TlsTestServer : IAsyncDisposable
 
     private readonly TaskCompletionSource<string> _authenticatedClientFingerprint = 
         new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<bool> _clientAuthenticationResult =
+        new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public Task<string> AuthenticatedClientFingerprint => _authenticatedClientFingerprint.Task;
+    public Task<bool> ClientAuthenticationResult => _clientAuthenticationResult.Task;
     
     public TlsTestServer(
         X509Certificate2? issuer = null,
@@ -188,13 +192,30 @@ public sealed class TlsTestServer : IAsyncDisposable
             authenticationOptions.RemoteCertificateValidationCallback = ValidateClientCertificate;
         }
 
-        await stream.AuthenticateAsServerAsync(authenticationOptions, ct);
-        
-        if (_clientTrustRoot is not null && stream.RemoteCertificate is not null)
+        try
         {
-            var certificateFingerprint = stream.RemoteCertificate.GetCertHashString(HashAlgorithmName.SHA256);
-            _authenticatedClientFingerprint.TrySetResult(certificateFingerprint);
+            await stream.AuthenticateAsServerAsync(authenticationOptions, ct);
+            
+            if (_clientTrustRoot is not null)
+            {
+                if (stream.RemoteCertificate is not null)
+                {
+                    _clientAuthenticationResult.TrySetResult(true);
+            
+                    var certificateFingerprint = stream.RemoteCertificate.GetCertHashString(HashAlgorithmName.SHA256);
+                    _authenticatedClientFingerprint.TrySetResult(certificateFingerprint);
+                }
+                else
+                {
+                    _clientAuthenticationResult.TrySetResult(false);
+                }
+            }
         }
+        catch (AuthenticationException) when (_clientTrustRoot is not null)
+        {
+            _clientAuthenticationResult.TrySetResult(false);
+        }
+        
     }
 
     internal static X509Certificate2 CreateCertificateAuthority()
