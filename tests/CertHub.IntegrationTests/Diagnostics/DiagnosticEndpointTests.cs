@@ -95,7 +95,13 @@ public sealed class DiagnosticEndpointTests
         var now = TimeProvider.System.GetUtcNow();
         
         await using var factory = new DiagnosticApiFactory();
-        
+
+        var configuredClientCertificate = new CertificateSummary(
+            Subject: "CN=Configured Test Client",
+            Issuer: "Configured Test Client Issuer",
+            NotBefore: now.AddHours(-1),
+            NotAfter: now.AddHours(1),
+            Sha256Fingerprint: "Configured Test Client Fingerprint");
         
         factory.Probe.ReportToReturn = new TlsDiagnosticReport(
             Hostname: "allowed.example",
@@ -112,6 +118,7 @@ public sealed class DiagnosticEndpointTests
                 CipherSuite: null,
                 ApplicationProtocol: null),
             Certificate: null,
+            ConfiguredClientCertificate: configuredClientCertificate,
             TrustContext: new TrustContext(
                 Mode: TrustMode.System, 
                 ConfigurationId: "system",
@@ -162,7 +169,15 @@ public sealed class DiagnosticEndpointTests
             .GetProperty("findings")
             .EnumerateArray()
             .Select(element => element.GetProperty("code").GetString()));
-            
+
+        var serverCertObj = doc.RootElement.GetProperty("certificate").ValueKind;
+        Assert.Equal(JsonValueKind.Null, serverCertObj);
+
+        var clientCertObj = doc.RootElement.GetProperty("configuredClientCertificate");
+        Assert.Equal("CN=Configured Test Client", clientCertObj.GetProperty("subject").GetString());
+        Assert.Equal("Configured Test Client Issuer", clientCertObj.GetProperty("issuer").GetString());
+        Assert.Equal("Configured Test Client Fingerprint", clientCertObj.GetProperty("sha256Fingerprint").GetString());
+        
         Assert.Equal(request.Hostname, factory.Probe.LastRequest?.Hostname);
         Assert.Equal(request.Port, factory.Probe.LastRequest?.Port);
         Assert.Equal(1, factory.Probe.CallCount);

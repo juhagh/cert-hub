@@ -971,6 +971,13 @@ public sealed class TlsProbeTests
             Assert.Contains(issuer.GetCertHashString(HashAlgorithmName.SHA256), result.TrustContext.RootSha256Fingerprints);
             Assert.DoesNotContain(result.Findings, f => f.Code.StartsWith("CERT_"));
             Assert.DoesNotContain(result.Findings, f => f.Code.StartsWith("TLS_"));
+            
+            Assert.NotNull(result.ConfiguredClientCertificate);
+            Assert.Equal(clientCertificate.GetCertHashString(HashAlgorithmName.SHA256), result.ConfiguredClientCertificate.Sha256Fingerprint);
+            Assert.Equal(clientCertificate.Subject, result.ConfiguredClientCertificate.Subject);
+            Assert.Equal(clientCertificate.Issuer, result.ConfiguredClientCertificate.Issuer);
+            Assert.Equal(clientCertificate.NotBefore.ToUniversalTime(), result.ConfiguredClientCertificate.NotBefore.ToUniversalTime());
+            Assert.Equal(clientCertificate.NotAfter.ToUniversalTime(), result.ConfiguredClientCertificate.NotAfter.ToUniversalTime());
         }
         finally
         {
@@ -1061,6 +1068,8 @@ public sealed class TlsProbeTests
             Assert.False(string.IsNullOrWhiteSpace(result.Connection.RemoteIpAddress));
             Assert.Equal(TrustMode.CustomRoots, result.TrustContext.Mode);
             Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+
+            Assert.Null(result.ConfiguredClientCertificate);
         }
         finally
         {
@@ -1129,6 +1138,64 @@ public sealed class TlsProbeTests
         finally
         {
             File.Delete(caPemFile);
+            File.Delete(clientPfxFile);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WhenDnsResolutionFails_PreservesConfiguredClientCertificate()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        using var clientCertificate = TlsTestServer.CreateIssuedClientCertificate(issuer);
+        
+        var clientPfxFile = Path.GetTempFileName();
+
+        try
+        {
+            var exportParameters = new PbeParameters(
+                encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
+                hashAlgorithm: HashAlgorithmName.SHA256,
+                iterationCount: 100_000);
+
+            var clientPfxPassword = "password";
+            var clientPfx = clientCertificate.ExportPkcs12(exportParameters, clientPfxPassword);
+
+            File.WriteAllBytes(clientPfxFile, clientPfx);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.System,
+                ClientCertificatePath = clientPfxFile,
+                ClientCertificatePassword = clientPfxPassword
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new FailingHostResolver());
+            
+            var request = new TlsProbeRequest("localhost", 8443);
+            
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Failed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.NotEvaluated, result.TcpConnection);
+            Assert.Equal(CheckOutcome.NotEvaluated, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.NotEvaluated, result.CertificateValidation);
+            
+            Assert.Null(result.Certificate);
+            
+            Assert.NotNull(result.ConfiguredClientCertificate);
+            Assert.Equal(clientCertificate.GetCertHashString(HashAlgorithmName.SHA256), result.ConfiguredClientCertificate.Sha256Fingerprint);
+            Assert.Equal(clientCertificate.Subject, result.ConfiguredClientCertificate.Subject);
+            Assert.Equal(clientCertificate.Issuer, result.ConfiguredClientCertificate.Issuer);
+            Assert.Equal(clientCertificate.NotBefore.ToUniversalTime(), result.ConfiguredClientCertificate.NotBefore.ToUniversalTime());
+            Assert.Equal(clientCertificate.NotAfter.ToUniversalTime(), result.ConfiguredClientCertificate.NotAfter.ToUniversalTime());
+            
+            Assert.Contains(result.Findings, f => f.Code == "DNS_RESOLUTION_FAILED");
+        }
+        finally
+        {
             File.Delete(clientPfxFile);
         }
     }

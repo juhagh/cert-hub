@@ -43,6 +43,11 @@ public sealed class TlsProbe : ITlsProbe
         if (clientCertificate is not null && !clientCertificate.HasPrivateKey)
             throw new InvalidOperationException("Client certificate does not include private key.");
         
+         
+        CertificateSummary? configuredClientCertificate = clientCertificate is null 
+            ? null 
+            : CreateCertificateSummary(clientCertificate);
+        
         var attemptedAt = _timeProvider.GetUtcNow();
 
         using var timeoutCts = new CancellationTokenSource(_options.Timeout, _timeProvider);
@@ -90,7 +95,7 @@ public sealed class TlsProbe : ITlsProbe
                     Code: "DNS_RESOLUTION_FAILED",
                     Message: $"{ex.SocketErrorCode}: {ex.Message}");
             
-                return CreateDnsFailureReport(request, attemptedAt, trustContext, diagnosticFinding);
+                return CreateDnsFailureReport(request, attemptedAt, trustContext, diagnosticFinding, configuredClientCertificate);
             }
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
             {
@@ -101,7 +106,7 @@ public sealed class TlsProbe : ITlsProbe
                     Code: "DNS_TIMEOUT",
                     Message: $"DNS resolution exceeded the diagnostic time budget: {_options.Timeout.ToString()}.");
             
-                return CreateDnsFailureReport(request, attemptedAt, trustContext, diagnosticFinding);
+                return CreateDnsFailureReport(request, attemptedAt, trustContext, diagnosticFinding, configuredClientCertificate);
             }
 
             if (addresses.Length == 0)
@@ -112,7 +117,7 @@ public sealed class TlsProbe : ITlsProbe
                     Code: "DNS_RESOLUTION_FAILED",
                     Message: "DNS resolution returned no addresses.");
 
-                return CreateDnsFailureReport(request, attemptedAt, trustContext, diagnosticFinding);
+                return CreateDnsFailureReport(request, attemptedAt, trustContext, diagnosticFinding, configuredClientCertificate);
             }
         
             // Continue to TCP
@@ -153,7 +158,8 @@ public sealed class TlsProbe : ITlsProbe
                             request,
                             attemptedAt,
                             trustContext,
-                            connectionFindings.ToImmutableArray());
+                            connectionFindings.ToImmutableArray(),
+                            configuredClientCertificate);
                     }
                     catch (SocketException ex)
                     {
@@ -177,7 +183,12 @@ public sealed class TlsProbe : ITlsProbe
                     // TCP failure report
                     ct.ThrowIfCancellationRequested();
 
-                    return CreateTcpFailureReport(request, attemptedAt, trustContext, connectionFindings.ToImmutableArray());
+                    return CreateTcpFailureReport(
+                        request, 
+                        attemptedAt, 
+                        trustContext, 
+                        connectionFindings.ToImmutableArray(), 
+                        configuredClientCertificate);
                 }
             
                 var remoteEndPoint = connectedClient.Client.RemoteEndPoint as IPEndPoint;
@@ -324,6 +335,7 @@ public sealed class TlsProbe : ITlsProbe
                         CertificateValidation: certificateValidation,
                         Connection: connectionSummary,
                         Certificate: certificateSummary,
+                        ConfiguredClientCertificate: configuredClientCertificate,
                         TrustContext: trustContext,
                         findings);
                 }
@@ -354,6 +366,7 @@ public sealed class TlsProbe : ITlsProbe
                         CertificateValidation: certificateValidation,
                         Connection: connectionSummary,
                         Certificate: certificateSummary,
+                        ConfiguredClientCertificate: configuredClientCertificate,
                         TrustContext: trustContext,
                         findings);
                 }
@@ -378,6 +391,7 @@ public sealed class TlsProbe : ITlsProbe
                         CertificateValidation: certificateValidation,
                         Connection: connectionSummary,
                         Certificate: certificateSummary,
+                        ConfiguredClientCertificate: configuredClientCertificate,
                         TrustContext: trustContext,
                         findings);
                 }
@@ -402,6 +416,7 @@ public sealed class TlsProbe : ITlsProbe
                         CertificateValidation: certificateValidation,
                         Connection: connectionSummary,
                         Certificate: certificateSummary,
+                        ConfiguredClientCertificate: configuredClientCertificate,
                         TrustContext: trustContext,
                         findings);
                 }
@@ -464,7 +479,8 @@ public sealed class TlsProbe : ITlsProbe
         TlsProbeRequest request,
         DateTimeOffset attemptedAt,
         TrustContext trustContext,
-        DiagnosticFinding finding)
+        DiagnosticFinding finding,
+        CertificateSummary? clientCertificateSummary)
     {
         var connectionSummary = new ConnectionSummary(
             RemoteIpAddress: null, 
@@ -485,6 +501,7 @@ public sealed class TlsProbe : ITlsProbe
             CertificateValidation: CheckOutcome.NotEvaluated,
             connectionSummary,
             Certificate: null,
+            ConfiguredClientCertificate: clientCertificateSummary,
             trustContext,
             findings);
     }
@@ -493,7 +510,8 @@ public sealed class TlsProbe : ITlsProbe
         TlsProbeRequest request,
         DateTimeOffset attemptedAt,
         TrustContext trustContext,
-        ImmutableArray<DiagnosticFinding> diagnosticFindings)
+        ImmutableArray<DiagnosticFinding> diagnosticFindings,
+        CertificateSummary? clientCertificateSummary)
     {
         var connectionSummary = new ConnectionSummary(
             RemoteIpAddress: null, 
@@ -512,6 +530,7 @@ public sealed class TlsProbe : ITlsProbe
             CertificateValidation: CheckOutcome.NotEvaluated,
             connectionSummary,
             Certificate: null,
+            ConfiguredClientCertificate: clientCertificateSummary,
             trustContext,
             diagnosticFindings);
     }

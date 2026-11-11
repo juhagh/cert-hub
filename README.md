@@ -13,6 +13,7 @@ Current capabilities include:
 - DNS resolution and sequential TCP connection attempts across resolved addresses.
 - Server TLS authentication with enforced certificate validation using system trust or configured custom root CAs.
 - Optional operator-configured client PFX credentials for TLS client authentication, including passwordless PFX files.
+- Configured client-certificate subject, issuer, validity dates and SHA-256 fingerprint, preserved in reports even when DNS, TCP or TLS fails.
 - Reports distinguishing DNS, TCP, TLS authentication and certificate-validation outcomes.
 - Certificate subject, issuer, validity dates and SHA-256 fingerprint capture, including when validation rejects the certificate.
 - Hostname and certificate-chain validation findings with supporting platform error details.
@@ -23,7 +24,7 @@ Current capabilities include:
 
 The probe sends no HTTP request or other application data to the target. Revocation checking and automatic downloads of missing issuer certificates are disabled for this milestone.
 
-`CertificateValidation` describes the server certificate. `TlsAuthentication: Passed` means the client-side authentication operation completed; it does not confirm that the server accepted a client certificate or granted application access. A configured client credential may not be selected or sent. The report currently contains no client-certificate presentation or remote-acceptance evidence.
+`CertificateValidation` describes the server certificate. `TlsAuthentication: Passed` means the client-side authentication operation completed; it does not confirm that the server accepted a client certificate or granted application access. A configured client credential may not be selected or sent. `configuredClientCertificate` identifies the successfully loaded credential; it provides no evidence of selection, presentation or remote acceptance. It is null when no client credential is configured.
 
 A diagnostic response can return HTTP `200` while reporting a failed target connection. The status indicates that a report was returned; the report's outcomes describe the target.
 
@@ -40,7 +41,7 @@ dotnet test tests/CertHub.Domain.Tests/CertHub.Domain.Tests.csproj
 dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj
 ```
 
-The integration suite currently contains 82 test cases, alongside the Domain certificate-validity tests. Coverage includes:
+The Domain and integration suites cover:
 
 - DNS resolution failure, empty address results, timeout reporting and caller cancellation during resolution.
 - TCP connection refusal and fallback to a second address while preserving the first connection failure finding.
@@ -49,6 +50,7 @@ The integration suite currently contains 82 test cases, alongside the Domain cer
 - Rejection of expired and not-yet-valid server certificates issued by a trusted test CA, with certificate evidence and dedicated validity findings preserved.
 - Request validation, target policy and HTTP endpoint behaviour.
 - Client credential configuration, rejection of PFX files without a private key and incorrect PFX passwords.
+- Configured client metadata on successful authentication and DNS failure, null evidence without a configured credential, and API serialization of the client summary independently of the server certificate.
 - Successful client authentication using protected and passwordless PFX files, confirmed by the server-observed client certificate fingerprint.
 - Server-side rejection of missing client credentials and of a presented client certificate issued by an untrusted CA.
 

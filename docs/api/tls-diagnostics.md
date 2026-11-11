@@ -81,6 +81,7 @@ The following is an example from the local lab using system trust. The lab CA is
     "notAfter": "2027-01-05T04:38:12+00:00",
     "sha256Fingerprint": "80E68459EEE4DC63E177B92F7F45FFA518B3FC9A6F99493FE3EACC29AA65C421"
   },
+  "configuredClientCertificate": null,
   "trustContext": {
     "mode": "System",
     "configurationId": "system",
@@ -112,13 +113,40 @@ A failed address attempt can produce a finding even when a later address connect
 
 Use finding codes for identification and messages for explanatory details. Platform error wording and chain-status details can vary. See the [diagnostic report design](../architecture/diagnostic-report.md) for the report model.
 
+### Configured client certificate evidence
+
+The nullable `configuredClientCertificate` property describes the client credential successfully loaded by the probe. It uses the same metadata shape as the server's `certificate` property:
+
+```json
+{
+  "configuredClientCertificate": {
+    "subject": "CN=CertHub Lab Client",
+    "issuer": "CN=CertHub Lab Root CA",
+    "notBefore": "2026-11-10T09:52:05+00:00",
+    "notAfter": "2027-02-08T09:57:05+00:00",
+    "sha256Fingerprint": "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"
+  }
+}
+```
+
+This is an illustrative response fragment, not recorded connection evidence. The fingerprint is a placeholder; actual dates and fingerprints depend on the configured certificate.
+
+| Value | Meaning |
+|---|---|
+| `null` | No client credential was configured. |
+| Certificate summary | The PFX loaded successfully and contained a private key. The summary identifies that local credential. |
+
+The summary is captured before networking and remains available in returned reports when DNS resolution, TCP connection or TLS authentication fails. The server `certificate` can therefore be null while `configuredClientCertificate` is populated. Credential-loading failures propagate as local configuration errors rather than reports with null client evidence.
+
+Its presence does not prove the credential was selected, sent or accepted by the target. The validity dates are metadata, not a client-validation outcome. File paths, passwords and private-key material are excluded. Existing `CERT_*` validity findings and `certificateValidation` continue to describe the server certificate.
+
 ### Client authentication and report interpretation
 
 `certificateValidation` and `certificate` describe the server certificate. The probe validates that certificate independently of any client credential it supplies.
 
 `tlsAuthentication: Passed` means `AuthenticateAsClientAsync` completed successfully from the probe's perspective. It does not establish that the remote server accepted the client certificate or granted application access. A configured certificate is available for selection; configuration alone does not prove it was sent.
 
-Depending on protocol, platform and timing, server rejection of a missing or untrusted client certificate may become observable only during subsequent communication. The current probe returns after authentication and sends no application data. A report can therefore show client-side TLS completion while the server rejects client authentication. The report does not currently contain client-certificate presentation or remote-acceptance evidence.
+Depending on protocol, platform and timing, server rejection of a missing or untrusted client certificate may become observable only during subsequent communication. The current probe returns after authentication and sends no application data. A report can therefore show client-side TLS completion while the server rejects client authentication. The report identifies the loaded credential through `configuredClientCertificate`, but contains no client-certificate selection, presentation or remote-acceptance evidence.
 
 Controlled integration tests observe the server directly to confirm presentation, acceptance and rejection. Those observations are not available to the production API. See the [report design](../architecture/diagnostic-report.md) for the precise outcome definitions.
 
@@ -268,7 +296,7 @@ Start or restart the API from the terminal containing its password setting:
 dotnet run --project src/CertHub.Api/CertHub.Api.csproj --launch-profile https
 ```
 
-Call `POST /diagnostics/tls` with the same hostname-and-port request as before. A trusted client credential enables the authentication attempt; the response's TLS outcome still has the client-side interpretation described above. No additional client-authentication outcome is returned. For the independently observed Docker/curl acceptance and rejection cases, see the [mTLS lab scenario](../../lab/scenarios/05-mutual-tls.md).
+Call `POST /diagnostics/tls` with the same hostname-and-port request as before. A trusted client credential enables the authentication attempt; the response's TLS outcome still has the client-side interpretation described above. The response includes `configuredClientCertificate` for the loaded credential; no additional client-authentication outcome is returned. For the independently observed Docker/curl acceptance and rejection cases, see the [mTLS lab scenario](../../lab/scenarios/05-mutual-tls.md).
 
 The single configured client credential is available on all allowed diagnostic attempts. This milestone does not provide per-target credential selection or accept credentials from API callers.
 
@@ -315,5 +343,7 @@ dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj
 ```
 
 Client credential tests cover invalid configuration, missing private keys and incorrect PFX passwords. Loopback mTLS tests verify successful authentication with protected, empty-password and null-password PFX exports, using the server-observed authenticated fingerprint. Negative tests verify server rejection without a credential and with a presented certificate from another CA; the latter also checks its presented fingerprint. Client-side TLS failure timing is not required to match across platforms.
+
+Configured-credential evidence tests verify all summary fields during successful client authentication, null evidence without a credential, and preservation of loaded metadata when controlled DNS resolution fails. Endpoint tests verify the JSON property name and client metadata independently of a null server certificate.
 
 These tests require neither Docker nor changes to the machine's trust store.
