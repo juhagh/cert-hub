@@ -273,7 +273,6 @@ public sealed class TlsProbeTests
             
             var result = await sut.ProbeAsync(request);
             
-            
             Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
             Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
             Assert.Equal(CheckOutcome.Failed, result.TlsAuthentication);
@@ -300,6 +299,12 @@ public sealed class TlsProbeTests
             Assert.Contains(result.Findings, f => f.Code == "CERT_HOSTNAME_MISMATCH");
             Assert.Contains(result.Findings, f => f.Code == "TLS_AUTHENTICATION_FAILED");
             Assert.DoesNotContain(result.Findings, f => f.Code == "CERT_CHAIN_INVALID");
+            
+            Assert.Collection(result.Certificate.DnsNames, dnsName =>
+            {
+                Assert.Equal("wrong-host.example", dnsName);
+            });
+            Assert.Empty(result.Certificate.IpAddresses);
         }
         finally
         {
