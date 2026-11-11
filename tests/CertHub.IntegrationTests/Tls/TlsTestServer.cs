@@ -33,18 +33,26 @@ public sealed class TlsTestServer : IAsyncDisposable
         string certificateHostname = "localhost",
         DateTimeOffset? certificateNotBefore = null,
         DateTimeOffset? certificateNotAfter = null,
-        X509Certificate2? clientTrustRoot = null)
+        X509Certificate2? clientTrustRoot = null,
+        string[]? certificateDnsNames = null,
+        IPAddress[]? certificateIpAddresses = null)
     {
         if (issuer is null)
         {
-            _certificate = CreateServerCertificate(certificateHostname);    
+            _certificate = CreateServerCertificate(
+                certificateHostname,
+                certificateDnsNames,
+                certificateIpAddresses);    
         }
         else
         {
-            _certificate = CreateIssuedServerCertificate(certificateHostname, 
+            _certificate = CreateIssuedServerCertificate(
+                certificateHostname, 
                 issuer,
                 certificateNotBefore, 
-                certificateNotAfter);
+                certificateNotAfter,
+                certificateDnsNames,
+                certificateIpAddresses);
         }
         
         _clientTrustRoot = clientTrustRoot;
@@ -73,7 +81,10 @@ public sealed class TlsTestServer : IAsyncDisposable
         }
     }
 
-    private static X509Certificate2 CreateServerCertificate(string certificateHostname)
+    private static X509Certificate2 CreateServerCertificate(
+        string certificateHostname,
+        string[]? certificateDnsNames,
+        IPAddress[]? certificateIpAddresses)
     {
         //Generate a public/private key pair.
         using RSA rsa = RSA.Create(2048);
@@ -85,10 +96,25 @@ public sealed class TlsTestServer : IAsyncDisposable
             padding: RSASignaturePadding.Pkcs1);
 
         SubjectAlternativeNameBuilder sanBuilder = new SubjectAlternativeNameBuilder();
-        sanBuilder.AddDnsName(certificateHostname);
-        var extension = sanBuilder.Build();
+        
+        string[] dnsNames = certificateDnsNames ?? [certificateHostname];
+        IPAddress[] ipAddresses = certificateIpAddresses ?? Array.Empty<IPAddress>();
+        
+        foreach (var dnsName in dnsNames)
+        {
+            sanBuilder.AddDnsName(dnsName);
+        }
+        
+        foreach (var ipAddress in ipAddresses)
+        {
+            sanBuilder.AddIpAddress(ipAddress);
+        }
 
-        request.CertificateExtensions.Add(extension);
+        if (dnsNames.Length > 0 || ipAddresses.Length > 0)
+        {
+            var extension = sanBuilder.Build();
+            request.CertificateExtensions.Add(extension);
+        }
 
         X509BasicConstraintsExtension constraintsExtension = new X509BasicConstraintsExtension(
             certificateAuthority: false,
@@ -123,7 +149,9 @@ public sealed class TlsTestServer : IAsyncDisposable
         string certificateHostname, 
         X509Certificate2 issuer,
         DateTimeOffset? notBefore,
-        DateTimeOffset? notAfter)
+        DateTimeOffset? notAfter,
+        string[]? certificateDnsNames,
+        IPAddress[]? certificateIpAddresses)
     {
         //Generate a public/private key pair.
         using RSA rsa = RSA.Create(2048);
@@ -135,11 +163,26 @@ public sealed class TlsTestServer : IAsyncDisposable
             padding: RSASignaturePadding.Pkcs1);
 
         SubjectAlternativeNameBuilder sanBuilder = new SubjectAlternativeNameBuilder();
-        sanBuilder.AddDnsName(certificateHostname);
-        var extension = sanBuilder.Build();
+        
+        string[] dnsNames = certificateDnsNames ?? [certificateHostname];
+        IPAddress[] ipAddresses = certificateIpAddresses ?? Array.Empty<IPAddress>();
+        
+        foreach (var dnsName in dnsNames)
+        {
+            sanBuilder.AddDnsName(dnsName);
+        }
+        
+        foreach (var ipAddress in ipAddresses)
+        {
+            sanBuilder.AddIpAddress(ipAddress);
+        }
 
-        request.CertificateExtensions.Add(extension);
-
+        if (dnsNames.Length > 0 || ipAddresses.Length > 0)
+        {
+            var extension = sanBuilder.Build();
+            request.CertificateExtensions.Add(extension);
+        }
+        
         X509BasicConstraintsExtension constraintsExtension = new X509BasicConstraintsExtension(
             certificateAuthority: false,
             hasPathLengthConstraint: false,

@@ -1325,6 +1325,60 @@ public sealed class TlsProbeTests
             File.Delete(clientPfxFile);
         }
     }
+
+    [Fact]
+    public async Task ProbeAsync_WithMultipleSubjectAlternativeNames_ReturnsDnsAndIpEvidence()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        var caPemFile = Path.GetTempFileName();
+        
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(caPemFile, publicCert);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [caPemFile],
+            };
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+
+            string[] dnsSans = ["localhost", "api.example.test"];
+            IPAddress[] ipSans = [IPAddress.Loopback, IPAddress.IPv6Loopback];
+            
+            await using TlsTestServer testServer = new TlsTestServer(
+                issuer: issuer, 
+                certificateDnsNames: dnsSans,
+                certificateIpAddresses: ipSans);
+            
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Passed, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.Passed, result.CertificateValidation);
+
+            Assert.NotNull(result.Certificate);
+            Assert.Collection(result.Certificate.DnsNames,
+                firstDnsName => { Assert.Equal("localhost", firstDnsName); },
+                secondDnsName => { Assert.Equal("api.example.test", secondDnsName); });
+            
+            Assert.Collection(result.Certificate.IpAddresses,
+                firstIpAddress => { Assert.Equal("127.0.0.1", firstIpAddress); },
+                secondIpAddress => { Assert.Equal("::1", secondIpAddress);});
+        }
+        finally
+        {
+            File.Delete(caPemFile);
+        }
+    }
     
     private static int GetUnusedLoopBackPort()
     {
