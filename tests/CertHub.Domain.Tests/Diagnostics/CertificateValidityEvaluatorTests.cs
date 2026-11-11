@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using CertHub.Domain.Diagnostics;
 
 namespace CertHub.Domain.Tests.Diagnostics;
@@ -20,7 +21,9 @@ public sealed class CertificateValidityEvaluatorTests
             Issuer: "issuer",
             NotBefore: notBefore,
             NotAfter: notAfter,
-            Sha256Fingerprint: testFingerprint);
+            Sha256Fingerprint: testFingerprint,
+            DnsNames: ImmutableArray<string>.Empty,
+            IpAddresses: ImmutableArray<string>.Empty);
 
         var findings = CertificateValidityEvaluator.Evaluate(certificate, evaluatedAt);
 
@@ -45,7 +48,9 @@ public sealed class CertificateValidityEvaluatorTests
             Issuer: "issuer",
             NotBefore: notBefore,
             NotAfter: notAfter,
-            Sha256Fingerprint: testFingerprint);
+            Sha256Fingerprint: testFingerprint,
+            DnsNames: ImmutableArray<string>.Empty,
+            IpAddresses: ImmutableArray<string>.Empty);
 
         var findings = CertificateValidityEvaluator.Evaluate(certificate, evaluatedAt);
 

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -101,7 +102,9 @@ public sealed class DiagnosticEndpointTests
             Issuer: "Configured Test Client Issuer",
             NotBefore: now.AddHours(-1),
             NotAfter: now.AddHours(1),
-            Sha256Fingerprint: "Configured Test Client Fingerprint");
+            Sha256Fingerprint: "Configured Test Client Fingerprint",
+            DnsNames: ImmutableArray<string>.Empty,
+            IpAddresses: ImmutableArray<string>.Empty);
         
         factory.Probe.ReportToReturn = new TlsDiagnosticReport(
             Hostname: "allowed.example",

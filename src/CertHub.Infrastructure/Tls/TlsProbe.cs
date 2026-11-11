@@ -455,12 +455,24 @@ public sealed class TlsProbe : ITlsProbe
 
     private static CertificateSummary CreateCertificateSummary(X509Certificate2 certificate)
     {
+        var sanExtension = certificate.Extensions.OfType<X509SubjectAlternativeNameExtension>().SingleOrDefault();
+        var dnsNames = ImmutableArray<string>.Empty;
+        var ipAddresses = ImmutableArray<string>.Empty;
+
+        if (sanExtension is not null)
+        {
+            dnsNames = sanExtension.EnumerateDnsNames().ToImmutableArray();
+            ipAddresses = sanExtension.EnumerateIPAddresses().Select(ip => ip.ToString()).ToImmutableArray();
+        }
+        
         return new CertificateSummary(
             Subject: certificate.Subject,
             Issuer: certificate.Issuer,
             NotBefore: certificate.NotBefore.ToUniversalTime(),
             NotAfter: certificate.NotAfter.ToUniversalTime(),
-            Sha256Fingerprint: certificate.GetCertHashString(HashAlgorithmName.SHA256));
+            Sha256Fingerprint: certificate.GetCertHashString(HashAlgorithmName.SHA256),
+            DnsNames: dnsNames,
+            IpAddresses: ipAddresses);
     }
     
     private static TlsDiagnosticReport CreateDnsFailureReport(

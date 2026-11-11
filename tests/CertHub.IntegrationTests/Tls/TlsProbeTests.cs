@@ -978,6 +978,12 @@ public sealed class TlsProbeTests
             Assert.Equal(clientCertificate.Issuer, result.ConfiguredClientCertificate.Issuer);
             Assert.Equal(clientCertificate.NotBefore.ToUniversalTime(), result.ConfiguredClientCertificate.NotBefore.ToUniversalTime());
             Assert.Equal(clientCertificate.NotAfter.ToUniversalTime(), result.ConfiguredClientCertificate.NotAfter.ToUniversalTime());
+            
+            var dnsName = Assert.Single(result.Certificate.DnsNames);
+            Assert.Equal("localhost", dnsName);
+            Assert.Empty(result.Certificate.IpAddresses);
+            Assert.Empty(result.ConfiguredClientCertificate.DnsNames);
+            Assert.Empty(result.ConfiguredClientCertificate.IpAddresses);
         }
         finally
         {
