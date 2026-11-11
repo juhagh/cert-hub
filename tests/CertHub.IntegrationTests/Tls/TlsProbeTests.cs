@@ -1202,6 +1202,64 @@ public sealed class TlsProbeTests
             File.Delete(clientPfxFile);
         }
     }
+
+    [Fact]
+    public async Task ProbeAsync_WhenTcpConnectionFails_PreservesConfiguredClientCertificate()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        using var clientCertificate = TlsTestServer.CreateIssuedClientCertificate(issuer);
+        
+        var clientPfxFile = Path.GetTempFileName();
+
+        try
+        {
+            var exportParameters = new PbeParameters(
+                encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
+                hashAlgorithm: HashAlgorithmName.SHA256,
+                iterationCount: 100_000);
+
+            var clientPfxPassword = "password";
+            var clientPfx = clientCertificate.ExportPkcs12(exportParameters, clientPfxPassword);
+
+            File.WriteAllBytes(clientPfxFile, clientPfx);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.System,
+                ClientCertificatePath = clientPfxFile,
+                ClientCertificatePassword = clientPfxPassword
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new FixedHostResolver([IPAddress.Loopback]));
+            
+            var request = new TlsProbeRequest("localhost", GetUnusedLoopBackPort());
+            
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Failed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.NotEvaluated, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.NotEvaluated, result.CertificateValidation);
+            
+            Assert.Null(result.Certificate);
+            
+            Assert.NotNull(result.ConfiguredClientCertificate);
+            Assert.Equal(clientCertificate.GetCertHashString(HashAlgorithmName.SHA256), result.ConfiguredClientCertificate.Sha256Fingerprint);
+            Assert.Equal(clientCertificate.Subject, result.ConfiguredClientCertificate.Subject);
+            Assert.Equal(clientCertificate.Issuer, result.ConfiguredClientCertificate.Issuer);
+            Assert.Equal(clientCertificate.NotBefore.ToUniversalTime(), result.ConfiguredClientCertificate.NotBefore.ToUniversalTime());
+            Assert.Equal(clientCertificate.NotAfter.ToUniversalTime(), result.ConfiguredClientCertificate.NotAfter.ToUniversalTime());
+            
+            Assert.Contains(result.Findings, f => f.Code == "TCP_CONNECTION_FAILED");
+        }
+        finally
+        {
+            File.Delete(clientPfxFile);
+        }
+    }
     
     private static int GetUnusedLoopBackPort()
     {
