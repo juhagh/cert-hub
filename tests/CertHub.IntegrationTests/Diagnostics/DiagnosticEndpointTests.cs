@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -103,8 +102,8 @@ public sealed class DiagnosticEndpointTests
             NotBefore: now.AddHours(-1),
             NotAfter: now.AddHours(1),
             Sha256Fingerprint: "Configured Test Client Fingerprint",
-            DnsNames: ImmutableArray<string>.Empty,
-            IpAddresses: ImmutableArray<string>.Empty);
+            DnsNames: ["client.example.test"],
+            IpAddresses: ["192.0.2.10", "2001:db8::10"]);
         
         factory.Probe.ReportToReturn = new TlsDiagnosticReport(
             Hostname: "allowed.example",
@@ -180,6 +179,16 @@ public sealed class DiagnosticEndpointTests
         Assert.Equal("CN=Configured Test Client", clientCertObj.GetProperty("subject").GetString());
         Assert.Equal("Configured Test Client Issuer", clientCertObj.GetProperty("issuer").GetString());
         Assert.Equal("Configured Test Client Fingerprint", clientCertObj.GetProperty("sha256Fingerprint").GetString());
+
+        var dnsNames = clientCertObj.GetProperty("dnsNames");
+        var dnsName = Assert.Single(dnsNames.EnumerateArray());
+        Assert.Equal("client.example.test", dnsName.GetString());
+        
+        var ipAddresses = clientCertObj.GetProperty("ipAddresses");
+        string[] expectedIpAddresses = ["192.0.2.10", "2001:db8::10"]; 
+        Assert.Equal(expectedIpAddresses, ipAddresses.EnumerateArray()
+            .Select(ip => ip.GetString())
+            .ToArray());
         
         Assert.Equal(request.Hostname, factory.Probe.LastRequest?.Hostname);
         Assert.Equal(request.Port, factory.Probe.LastRequest?.Port);
