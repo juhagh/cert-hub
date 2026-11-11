@@ -324,19 +324,16 @@ public sealed class TlsProbe : ITlsProbe
                     [
                         .. connectionFindings, .. certificateFindings
                     ];
-                
-                    return new TlsDiagnosticReport(
-                        request.Hostname,
-                        request.Port,
+
+                    return CreateTlsReport(
+                        request,
                         attemptedAt,
-                        DnsResolution: CheckOutcome.Passed,
-                        TcpConnection: CheckOutcome.Passed,
-                        TlsAuthentication: CheckOutcome.Passed,
-                        CertificateValidation: certificateValidation,
-                        Connection: connectionSummary,
-                        Certificate: certificateSummary,
-                        ConfiguredClientCertificate: configuredClientCertificate,
-                        TrustContext: trustContext,
+                        trustContext,
+                        connectionSummary,
+                        certificateSummary,
+                        configuredClientCertificate,
+                        tlsAuthentication: CheckOutcome.Passed,
+                        certificateValidation: certificateValidation,
                         findings);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -356,18 +353,15 @@ public sealed class TlsProbe : ITlsProbe
                             "The shared diagnostic time budget expired during TLS authentication.")
                     ];
                 
-                    return new TlsDiagnosticReport(
-                        request.Hostname,
-                        request.Port,
+                    return CreateTlsReport(
+                        request,
                         attemptedAt,
-                        DnsResolution: CheckOutcome.Passed,
-                        TcpConnection: CheckOutcome.Passed,
-                        TlsAuthentication: CheckOutcome.Failed,
-                        CertificateValidation: certificateValidation,
-                        Connection: connectionSummary,
-                        Certificate: certificateSummary,
-                        ConfiguredClientCertificate: configuredClientCertificate,
-                        TrustContext: trustContext,
+                        trustContext,
+                        connectionSummary,
+                        certificateSummary,
+                        configuredClientCertificate,
+                        tlsAuthentication: CheckOutcome.Failed,
+                        certificateValidation,
                         findings);
                 }
                 catch (AuthenticationException ex)
@@ -381,18 +375,15 @@ public sealed class TlsProbe : ITlsProbe
                         new DiagnosticFinding("TLS_AUTHENTICATION_FAILED", ex.Message)
                     ];
                 
-                    return new TlsDiagnosticReport(
-                        request.Hostname,
-                        request.Port,
+                    return CreateTlsReport(
+                        request,
                         attemptedAt,
-                        DnsResolution: CheckOutcome.Passed,
-                        TcpConnection: CheckOutcome.Passed,
-                        TlsAuthentication: CheckOutcome.Failed,
-                        CertificateValidation: certificateValidation,
-                        Connection: connectionSummary,
-                        Certificate: certificateSummary,
-                        ConfiguredClientCertificate: configuredClientCertificate,
-                        TrustContext: trustContext,
+                        trustContext,
+                        connectionSummary,
+                        certificateSummary,
+                        configuredClientCertificate,
+                        tlsAuthentication: CheckOutcome.Failed,
+                        certificateValidation,
                         findings);
                 }
                 catch (IOException ex)
@@ -406,18 +397,15 @@ public sealed class TlsProbe : ITlsProbe
                         new DiagnosticFinding("TLS_CONNECTION_FAILED", ex.Message)
                     ];
                 
-                    return new TlsDiagnosticReport(
-                        request.Hostname,
-                        request.Port,
+                    return CreateTlsReport(
+                        request,
                         attemptedAt,
-                        DnsResolution: CheckOutcome.Passed,
-                        TcpConnection: CheckOutcome.Passed,
-                        TlsAuthentication: CheckOutcome.Failed,
-                        CertificateValidation: certificateValidation,
-                        Connection: connectionSummary,
-                        Certificate: certificateSummary,
-                        ConfiguredClientCertificate: configuredClientCertificate,
-                        TrustContext: trustContext,
+                        trustContext,
+                        connectionSummary,
+                        certificateSummary,
+                        configuredClientCertificate,
+                        tlsAuthentication: CheckOutcome.Failed,
+                        certificateValidation,
                         findings);
                 }
             }
@@ -564,5 +552,31 @@ public sealed class TlsProbe : ITlsProbe
         
         if (_options.ClientCertificatePath is not null && string.IsNullOrWhiteSpace(_options.ClientCertificatePath))
             throw new InvalidOperationException("Client certificate path is empty or white space.");
+    }
+
+    private static TlsDiagnosticReport CreateTlsReport(
+        TlsProbeRequest request,
+        DateTimeOffset attemptedAt,
+        TrustContext trustContext,
+        ConnectionSummary connection,
+        CertificateSummary? serverCertificate,
+        CertificateSummary? configuredClientCertificate,
+        CheckOutcome tlsAuthentication,
+        CheckOutcome certificateValidation,
+        ImmutableArray<DiagnosticFinding> findings)
+    {
+        return new TlsDiagnosticReport(
+            Hostname: request.Hostname,
+            Port: request.Port,
+            AttemptedAt: attemptedAt,
+            DnsResolution: CheckOutcome.Passed,
+            TcpConnection: CheckOutcome.Passed,
+            TlsAuthentication: tlsAuthentication,
+            CertificateValidation: certificateValidation,
+            Connection: connection,
+            Certificate: serverCertificate,
+            ConfiguredClientCertificate: configuredClientCertificate,
+            TrustContext: trustContext,
+            Findings: findings);
     }
 }
