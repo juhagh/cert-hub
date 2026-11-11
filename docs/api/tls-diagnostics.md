@@ -56,7 +56,7 @@ After syntax validation, the hostname and port must match one configured allowed
 
 A `200` response means the API returned a diagnostic report. The target may have failed DNS resolution, TCP connection or TLS authentication. Inspect the individual outcomes and findings to determine what happened.
 
-The following is an example from the local lab using system trust. The lab CA is not trusted under that configuration, so certificate validation and TLS authentication fail while certificate evidence remains available:
+The following example is based on an earlier local-lab run using system trust, updated to show the current response shape (including configured-client and SAN fields). The lab CA is not trusted under that configuration, so certificate validation and TLS authentication fail while certificate evidence remains available:
 
 ```json
 {
@@ -79,7 +79,9 @@ The following is an example from the local lab using system trust. The lab CA is
     "issuer": "CN=CertHub Lab Root CA",
     "notBefore": "2026-10-07T04:38:12+00:00",
     "notAfter": "2027-01-05T04:38:12+00:00",
-    "sha256Fingerprint": "80E68459EEE4DC63E177B92F7F45FFA518B3FC9A6F99493FE3EACC29AA65C421"
+    "sha256Fingerprint": "80E68459EEE4DC63E177B92F7F45FFA518B3FC9A6F99493FE3EACC29AA65C421",
+    "dnsNames": ["localhost"],
+    "ipAddresses": []
   },
   "configuredClientCertificate": null,
   "trustContext": {
@@ -113,6 +115,32 @@ A failed address attempt can produce a finding even when a later address connect
 
 Use finding codes for identification and messages for explanatory details. Platform error wording and chain-status details can vary. See the [diagnostic report design](../architecture/diagnostic-report.md) for the report model.
 
+### DNS and IP Subject Alternative Names
+
+Both `certificate` and `configuredClientCertificate`, when present, include these JSON arrays:
+
+| Property | Contents |
+|---|---|
+| `dnsNames` | DNS-name entries parsed from the certificate's SAN extension. |
+| `ipAddresses` | IP-address SAN entries formatted as strings, including IPv4 and IPv6. |
+
+Illustrative certificate-summary fragment:
+
+```json
+{
+  "dnsNames": ["localhost", "api.example.test"],
+  "ipAddresses": ["127.0.0.1", "::1"]
+}
+```
+
+An absent entry type is represented by `[]`, including when the certificate has no SAN extension. These arrays represent only DNS and IP entries; other SAN types are not exposed. A null certificate summary remains null.
+
+DNS values are recorded as returned by the platform parser. The probe does not lowercase, deduplicate or perform its own hostname matching while extracting this evidence. IP addresses use the platform's `IPAddress.ToString()` representation. Ordering is preserved within each type, without representing ordering between different SAN types.
+
+The arrays describe certificate contents, including when server validation fails. For example, a request for `localhost` can return `dnsNames: ["wrong-host.example"]` alongside `CERT_HOSTNAME_MISMATCH`. The subject CN is not substituted for absent DNS SAN entries. Platform certificate validation remains responsible for acceptance.
+
+IP SAN evidence does not enable IP-literal diagnostic targets; the request contract still accepts hostnames only.
+
 ### Configured client certificate evidence
 
 The nullable `configuredClientCertificate` property describes the client credential successfully loaded by the probe. It uses the same metadata shape as the server's `certificate` property:
@@ -124,7 +152,9 @@ The nullable `configuredClientCertificate` property describes the client credent
     "issuer": "CN=CertHub Lab Root CA",
     "notBefore": "2026-11-10T09:52:05+00:00",
     "notAfter": "2027-02-08T09:57:05+00:00",
-    "sha256Fingerprint": "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"
+    "sha256Fingerprint": "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+    "dnsNames": [],
+    "ipAddresses": []
   }
 }
 ```
@@ -345,5 +375,7 @@ dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj
 Client credential tests cover invalid configuration, missing private keys and incorrect PFX passwords. Loopback mTLS tests verify successful authentication with protected, empty-password and null-password PFX exports, using the server-observed authenticated fingerprint. Negative tests verify server rejection without a credential and with a presented certificate from another CA; the latter also checks its presented fingerprint. Client-side TLS failure timing is not required to match across platforms.
 
 Configured-credential evidence tests verify all summary fields during successful client authentication, null evidence without a credential, and preservation of loaded metadata when controlled DNS resolution fails. Endpoint tests verify the JSON property name and client metadata independently of a null server certificate.
+
+SAN coverage verifies multiple DNS entries and both IPv4 and IPv6 entries, empty collections on a client certificate without a SAN extension, and preserved DNS evidence after hostname mismatch. Endpoint tests verify DNS/IP JSON array values and counts.
 
 These tests require neither Docker nor changes to the machine's trust store.

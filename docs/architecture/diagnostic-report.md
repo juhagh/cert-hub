@@ -50,7 +50,7 @@ A failed check does not erase evidence already collected.
 
 The summary is captured before networking and retained in every returned report, including DNS, TCP and TLS failure reports. It describes a local credential available for TLS selection. Its presence does not establish that the certificate was selected, sent or accepted remotely.
 
-The summary includes subject, issuer, validity dates and SHA-256 fingerprint. It excludes file paths, passwords and private-key material. The validity dates are metadata; the summary does not assert that the client certificate is valid or trusted by the server.
+The summary includes subject, issuer, validity dates, SHA-256 fingerprint and DNS/IP SAN entries. It excludes file paths, passwords and private-key material. The validity dates are metadata; the summary does not assert that the client certificate is valid or trusted by the server.
 
 Successful client-side TLS authentication does not establish that the server accepted the client certificate. Depending on the negotiated protocol and platform, server rejection may become observable only during subsequent communication. CertHub currently ends its inspection after the authentication operation.
 
@@ -67,8 +67,8 @@ The report contains the following information when available:
 | Section            | Evidence                                                                                                                                                                                  |
 |--------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Connection         | Connected IP, TCP-stage duration, negotiated TLS version and cipher suite. TCP-stage duration includes possible earlier failed address attempts and is currently recorded on TCP success. |
-| Server certificate | Subject, issuer, validity dates and SHA-256 fingerprint.                                                                                                                                  |
-| Configured client certificate | Subject, issuer, validity dates and SHA-256 fingerprint from the successfully loaded client credential; null when none is configured. |
+| Server certificate | Subject, issuer, validity dates, SHA-256 fingerprint, DNS SAN names and IP SAN addresses.                                                                                                                                  |
+| Configured client certificate | Subject, issuer, validity dates, SHA-256 fingerprint and DNS/IP SAN entries from the successfully loaded client credential; null when none is configured. |
 | Certificate chain  | Chain-status details are included in finding messages; there is no structured chain section yet.                                                                                          |
 | Findings           | Stable finding code, readable explanation and supporting details                                                                                                                          |
 | Trust context      | Trust mode, configuration identifier and certificate evaluation time, configured custom-root fingerprints                                                                                 |
@@ -78,11 +78,22 @@ Unavailable information is omitted or represented as absent. It must not be inte
 Certificate metadata may be partial. The built chain is not claimed to be an exact list of certificates sent by the
 server.
 
+### Subject Alternative Names
+
+`CertificateSummary.DnsNames` and `CertificateSummary.IpAddresses` contain DNS-name and IP-address entries from the certificate's SAN extension. Both the server and configured client summaries use these fields.
+
+Each collection is initialized and empty when that entry type is absent, including when the certificate has no SAN extension. A missing certificate summary remains null; an empty SAN collection does not indicate that the certificate itself is missing.
+
+DNS entries are recorded as returned by the platform SAN parser without application-level matching, deduplication or lowercasing. IP entries are formatted using `IPAddress.ToString()`, including IPv4 and IPv6 addresses. Entries retain their order within each type; these separate arrays do not represent interleaving between DNS and IP entries in the extension.
+
+Only DNS and IP SAN types are represented in this milestone. An empty pair of arrays does not establish that the certificate has no other SAN types, such as URI or email entries. The subject CN is not used to populate DNS SAN evidence.
+
+SAN extraction describes certificate contents and does not change acceptance. Platform validation still determines hostname matching, trust and usage. DNS SAN evidence remains available when hostname validation rejects the server certificate. IP SAN evidence does not expand the API's hostname-only target contract.
+
 ### Planned Evidence
 
 Following evidence is planned to be included in future implementations:
 
-- SAN entries
 - Structured built-chain details
 - ALPN
 
@@ -173,7 +184,7 @@ The following types are implemented under `CertHub.Domain/Diagnostics/`:
 
 - `CheckOutcome` — Passed, Failed or NotEvaluated.
 - `DiagnosticFinding` — A finding code, and a message with explanation and supporting details.
-- `CertificateSummary` — Certificate metadata reused for the server certificate and configured client credential.
+- `CertificateSummary` — Certificate metadata, including immutable DNS/IP SAN collections, reused for the server certificate and configured client credential.
 - `TlsDiagnosticReport` — Target, check outcomes, server and configured client certificate summaries, connection evidence, findings and trust context.
 - `ConnectionSummary`
 - `TrustContext`
