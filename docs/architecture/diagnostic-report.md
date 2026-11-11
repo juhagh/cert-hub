@@ -46,7 +46,11 @@ A failed check does not erase evidence already collected.
 
 ## Client Authentication Evidence
 
-A configured client certificate is available for TLS credential selection. Configuration alone does not establish that the certificate was sent.
+`ConfiguredClientCertificate` contains metadata from the configured PFX after successful loading and the private-key check. It is null when no client credential is configured. A configured credential that cannot load or lacks a private key causes an exception; it is not represented by a null summary in a returned report.
+
+The summary is captured before networking and retained in every returned report, including DNS, TCP and TLS failure reports. It describes a local credential available for TLS selection. Its presence does not establish that the certificate was selected, sent or accepted remotely.
+
+The summary includes subject, issuer, validity dates and SHA-256 fingerprint. It excludes file paths, passwords and private-key material. The validity dates are metadata; the summary does not assert that the client certificate is valid or trusted by the server.
 
 Successful client-side TLS authentication does not establish that the server accepted the client certificate. Depending on the negotiated protocol and platform, server rejection may become observable only during subsequent communication. CertHub currently ends its inspection after the authentication operation.
 
@@ -64,6 +68,7 @@ The report contains the following information when available:
 |--------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Connection         | Connected IP, TCP-stage duration, negotiated TLS version and cipher suite. TCP-stage duration includes possible earlier failed address attempts and is currently recorded on TCP success. |
 | Server certificate | Subject, issuer, validity dates and SHA-256 fingerprint.                                                                                                                                  |
+| Configured client certificate | Subject, issuer, validity dates and SHA-256 fingerprint from the successfully loaded client credential; null when none is configured. |
 | Certificate chain  | Chain-status details are included in finding messages; there is no structured chain section yet.                                                                                          |
 | Findings           | Stable finding code, readable explanation and supporting details                                                                                                                          |
 | Trust context      | Trust mode, configuration identifier and certificate evaluation time, configured custom-root fingerprints                                                                                 |
@@ -168,8 +173,8 @@ The following types are implemented under `CertHub.Domain/Diagnostics/`:
 
 - `CheckOutcome` — Passed, Failed or NotEvaluated.
 - `DiagnosticFinding` — A finding code, and a message with explanation and supporting details.
-- `CertificateSummary` — Available server-certificate metadata.
-- `TlsDiagnosticReport` — Target, check outcomes, evidence, findings and trust context.
+- `CertificateSummary` — Certificate metadata reused for the server certificate and configured client credential.
+- `TlsDiagnosticReport` — Target, check outcomes, server and configured client certificate summaries, connection evidence, findings and trust context.
 - `ConnectionSummary`
 - `TrustContext`
 - `TrustMode`
