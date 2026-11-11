@@ -1134,6 +1134,9 @@ public sealed class TlsProbeTests
             Assert.False(string.IsNullOrWhiteSpace(result.Connection.RemoteIpAddress));
             Assert.Equal(TrustMode.CustomRoots, result.TrustContext.Mode);
             Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+
+            Assert.NotNull(result.ConfiguredClientCertificate);
+            Assert.Equal(clientCertificate.GetCertHashString(HashAlgorithmName.SHA256), result.ConfiguredClientCertificate.Sha256Fingerprint);
         }
         finally
         {
