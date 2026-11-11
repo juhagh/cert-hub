@@ -1134,6 +1134,9 @@ public sealed class TlsProbeTests
             Assert.False(string.IsNullOrWhiteSpace(result.Connection.RemoteIpAddress));
             Assert.Equal(TrustMode.CustomRoots, result.TrustContext.Mode);
             Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+
+            Assert.NotNull(result.ConfiguredClientCertificate);
+            Assert.Equal(clientCertificate.GetCertHashString(HashAlgorithmName.SHA256), result.ConfiguredClientCertificate.Sha256Fingerprint);
         }
         finally
         {
@@ -1193,6 +1196,123 @@ public sealed class TlsProbeTests
             Assert.Equal(clientCertificate.NotAfter.ToUniversalTime(), result.ConfiguredClientCertificate.NotAfter.ToUniversalTime());
             
             Assert.Contains(result.Findings, f => f.Code == "DNS_RESOLUTION_FAILED");
+        }
+        finally
+        {
+            File.Delete(clientPfxFile);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WhenTcpConnectionFails_PreservesConfiguredClientCertificate()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        using var clientCertificate = TlsTestServer.CreateIssuedClientCertificate(issuer);
+        
+        var clientPfxFile = Path.GetTempFileName();
+
+        try
+        {
+            var exportParameters = new PbeParameters(
+                encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
+                hashAlgorithm: HashAlgorithmName.SHA256,
+                iterationCount: 100_000);
+
+            var clientPfxPassword = "password";
+            var clientPfx = clientCertificate.ExportPkcs12(exportParameters, clientPfxPassword);
+
+            File.WriteAllBytes(clientPfxFile, clientPfx);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.System,
+                ClientCertificatePath = clientPfxFile,
+                ClientCertificatePassword = clientPfxPassword
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new FixedHostResolver([IPAddress.Loopback]));
+            
+            var request = new TlsProbeRequest("localhost", GetUnusedLoopBackPort());
+            
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Failed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.NotEvaluated, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.NotEvaluated, result.CertificateValidation);
+            
+            Assert.Null(result.Certificate);
+            
+            Assert.NotNull(result.ConfiguredClientCertificate);
+            Assert.Equal(clientCertificate.GetCertHashString(HashAlgorithmName.SHA256), result.ConfiguredClientCertificate.Sha256Fingerprint);
+            Assert.Equal(clientCertificate.Subject, result.ConfiguredClientCertificate.Subject);
+            Assert.Equal(clientCertificate.Issuer, result.ConfiguredClientCertificate.Issuer);
+            Assert.Equal(clientCertificate.NotBefore.ToUniversalTime(), result.ConfiguredClientCertificate.NotBefore.ToUniversalTime());
+            Assert.Equal(clientCertificate.NotAfter.ToUniversalTime(), result.ConfiguredClientCertificate.NotAfter.ToUniversalTime());
+            
+            Assert.Contains(result.Findings, f => f.Code == "TCP_CONNECTION_FAILED");
+        }
+        finally
+        {
+            File.Delete(clientPfxFile);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WhenServerCertificateIsUntrusted_PreservesConfiguredClientCertificate()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+        using var clientCertificate = TlsTestServer.CreateIssuedClientCertificate(issuer);
+        
+        var clientPfxFile = Path.GetTempFileName();
+
+        try
+        {
+            var exportParameters = new PbeParameters(
+                encryptionAlgorithm: PbeEncryptionAlgorithm.Aes256Cbc,
+                hashAlgorithm: HashAlgorithmName.SHA256,
+                iterationCount: 100_000);
+            
+            var clientPfxPassword = "password";
+            var clientPfx = clientCertificate.ExportPkcs12(exportParameters, clientPfxPassword);
+            
+            File.WriteAllBytes(clientPfxFile, clientPfx);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.System,
+                ClientCertificatePath = clientPfxFile,
+                ClientCertificatePassword = clientPfxPassword
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+
+            await using TlsTestServer testServer = new TlsTestServer();
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Failed, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.Failed, result.CertificateValidation);
+            
+            Assert.NotNull(result.Connection);
+            Assert.False(string.IsNullOrWhiteSpace(result.Connection.RemoteIpAddress));
+            Assert.Equal(TrustMode.System, result.TrustContext.Mode);
+            Assert.Equal(localSettings.TrustConfigurationId, result.TrustContext.ConfigurationId);
+
+            Assert.NotNull(result.Certificate);
+            Assert.NotNull(result.ConfiguredClientCertificate);
+            Assert.Equal(clientCertificate.GetCertHashString(HashAlgorithmName.SHA256), result.ConfiguredClientCertificate.Sha256Fingerprint);
+            Assert.Contains(result.Findings, f => f.Code == "CERT_CHAIN_INVALID");
+            Assert.Contains(result.Findings, f => f.Code == "TLS_AUTHENTICATION_FAILED");
         }
         finally
         {
