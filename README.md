@@ -13,9 +13,9 @@ Current capabilities include:
 - DNS resolution and sequential TCP connection attempts across resolved addresses.
 - Server TLS authentication with enforced certificate validation using system trust or configured custom root CAs.
 - Optional operator-configured client PFX credentials for TLS client authentication, including passwordless PFX files.
-- Configured client-certificate subject, issuer, validity dates and SHA-256 fingerprint, preserved in reports even when DNS, TCP or TLS fails.
+- Configured client-certificate subject, issuer, validity dates, SHA-256 fingerprint and DNS/IP Subject Alternative Names (SANs), preserved in reports even when DNS, TCP or TLS fails.
 - Reports distinguishing DNS, TCP, TLS authentication and certificate-validation outcomes.
-- Certificate subject, issuer, validity dates and SHA-256 fingerprint capture, including when validation rejects the certificate.
+- Server-certificate subject, issuer, validity dates, SHA-256 fingerprint and DNS/IP SAN capture, including when validation rejects the certificate.
 - Hostname and certificate-chain validation findings with supporting platform error details.
 - Dedicated `CERT_EXPIRED` and `CERT_NOT_YET_VALID` findings based on the server certificate dates and report evaluation time.
 - Connected IP address, TCP-stage duration and negotiated TLS protocol and cipher suite when authentication succeeds.
@@ -50,7 +50,8 @@ The Domain and integration suites cover:
 - Rejection of expired and not-yet-valid server certificates issued by a trusted test CA, with certificate evidence and dedicated validity findings preserved.
 - Request validation, target policy and HTTP endpoint behaviour.
 - Client credential configuration, rejection of PFX files without a private key and incorrect PFX passwords.
-- Configured client metadata on successful authentication and DNS failure, null evidence without a configured credential, and API serialization of the client summary independently of the server certificate.
+- Configured client metadata on successful authentication and DNS/TCP failures, preservation on server-certificate and remote client rejection, null evidence without a configured credential, and API serialization independently of the server certificate.
+- Multiple DNS, IPv4 and IPv6 SAN entries, empty arrays for absent entry types, preservation of DNS SAN evidence on hostname mismatch, and JSON serialization of DNS/IP arrays.
 - Successful client authentication using protected and passwordless PFX files, confirmed by the server-observed client certificate fingerprint.
 - Server-side rejection of missing client credentials and of a presented client certificate issued by an untrusted CA.
 
