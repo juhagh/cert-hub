@@ -12,5 +12,6 @@ public sealed record TlsDiagnosticReport(
     CheckOutcome CertificateValidation,
     ConnectionSummary Connection,
     CertificateSummary? Certificate,
+    CertificateSummary? ConfiguredClientCertificate,
     TrustContext TrustContext,
     ImmutableArray<DiagnosticFinding> Findings);

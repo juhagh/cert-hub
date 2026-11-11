@@ -112,6 +112,7 @@ public sealed class DiagnosticEndpointTests
                 CipherSuite: null,
                 ApplicationProtocol: null),
             Certificate: null,
+            ConfiguredClientCertificate: null,
             TrustContext: new TrustContext(
                 Mode: TrustMode.System, 
                 ConfigurationId: "system",
