@@ -739,6 +739,12 @@ public sealed class TlsProbeTests
             Assert.Contains(result.Findings, f => f.Code == "CERT_EXPIRED");
             Assert.DoesNotContain(result.Findings, f => f.Code == "CERT_HOSTNAME_MISMATCH");
             Assert.DoesNotContain(result.Findings, f => f.Code == "CERT_NOT_YET_VALID");
+            
+            Assert.Equal(2, result.ServerCertificateChain.Length);
+            Assert.Equal(result.Certificate.Sha256Fingerprint, result.ServerCertificateChain[0].Certificate.Sha256Fingerprint);
+            Assert.Equal(issuer.GetCertHashString(HashAlgorithmName.SHA256), result.ServerCertificateChain[1].Certificate.Sha256Fingerprint);
+            Assert.Contains("NotTimeValid", result.ServerCertificateChain[0].StatusCodes);
+            Assert.Contains("NotTimeValid", result.ServerChainStatusCodes);
         }
         finally
         {
@@ -989,6 +995,13 @@ public sealed class TlsProbeTests
             Assert.Empty(result.Certificate.IpAddresses);
             Assert.Empty(result.ConfiguredClientCertificate.DnsNames);
             Assert.Empty(result.ConfiguredClientCertificate.IpAddresses);
+            
+            Assert.Equal(2, result.ServerCertificateChain.Length);
+            Assert.Equal(result.Certificate.Sha256Fingerprint, result.ServerCertificateChain[0].Certificate.Sha256Fingerprint);
+            Assert.Equal(issuer.GetCertHashString(HashAlgorithmName.SHA256), result.ServerCertificateChain[1].Certificate.Sha256Fingerprint);
+            Assert.Empty(result.ServerCertificateChain[0].StatusCodes);
+            Assert.Empty(result.ServerCertificateChain[1].StatusCodes);
+            Assert.Empty(result.ServerChainStatusCodes);
         }
         finally
         {

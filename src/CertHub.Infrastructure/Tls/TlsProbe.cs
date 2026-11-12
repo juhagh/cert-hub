@@ -232,6 +232,9 @@ public sealed class TlsProbe : ITlsProbe
 
                 CertificateSummary? certificateSummary = null;
                 CheckOutcome certificateValidation = CheckOutcome.NotEvaluated;
+                ImmutableArray<string> serverChainStatusCodes = ImmutableArray<string>.Empty;
+                ImmutableArray<CertificateChainElement> serverCertificateChain =
+                    ImmutableArray<CertificateChainElement>.Empty;
                 List<DiagnosticFinding> certificateFindings = new();
 
                 authenticationOptions.RemoteCertificateValidationCallback = ValidateServerCertificate;
@@ -257,6 +260,23 @@ public sealed class TlsProbe : ITlsProbe
                     {
                         var findings = CertificateValidityEvaluator.Evaluate(certificateSummary, attemptedAt);
                         certificateFindings.AddRange(findings);
+                    }
+
+                    if (chain is not null)
+                    {
+                        serverChainStatusCodes = chain.ChainStatus
+                            .Select(entry => entry.Status
+                            .ToString())
+                            .ToImmutableArray();
+
+                        serverCertificateChain = chain.ChainElements
+                            .Select(element =>
+                                new CertificateChainElement(
+                                    Certificate: CreateCertificateSummary(element.Certificate),
+                                    StatusCodes: element.ChainElementStatus
+                                        .Select(status => status.Status.ToString())
+                                        .ToImmutableArray())
+                            ).ToImmutableArray();
                     }
                     
                     if (sslPolicyErrors == SslPolicyErrors.None)
@@ -331,6 +351,8 @@ public sealed class TlsProbe : ITlsProbe
                         trustContext,
                         connectionSummary,
                         certificateSummary,
+                        certificateChainElements: serverCertificateChain,
+                        serverChainStatusCodes: serverChainStatusCodes,
                         configuredClientCertificate,
                         tlsAuthentication: CheckOutcome.Passed,
                         certificateValidation: certificateValidation,
@@ -359,6 +381,8 @@ public sealed class TlsProbe : ITlsProbe
                         trustContext,
                         connectionSummary,
                         certificateSummary,
+                        certificateChainElements: serverCertificateChain,
+                        serverChainStatusCodes: serverChainStatusCodes,
                         configuredClientCertificate,
                         tlsAuthentication: CheckOutcome.Failed,
                         certificateValidation,
@@ -381,6 +405,8 @@ public sealed class TlsProbe : ITlsProbe
                         trustContext,
                         connectionSummary,
                         certificateSummary,
+                        certificateChainElements: serverCertificateChain,
+                        serverChainStatusCodes: serverChainStatusCodes,
                         configuredClientCertificate,
                         tlsAuthentication: CheckOutcome.Failed,
                         certificateValidation,
@@ -403,6 +429,8 @@ public sealed class TlsProbe : ITlsProbe
                         trustContext,
                         connectionSummary,
                         certificateSummary,
+                        certificateChainElements: serverCertificateChain,
+                        serverChainStatusCodes: serverChainStatusCodes,
                         configuredClientCertificate,
                         tlsAuthentication: CheckOutcome.Failed,
                         certificateValidation,
@@ -501,6 +529,8 @@ public sealed class TlsProbe : ITlsProbe
             CertificateValidation: CheckOutcome.NotEvaluated,
             connectionSummary,
             Certificate: null,
+            ServerCertificateChain: ImmutableArray<CertificateChainElement>.Empty,
+            ServerChainStatusCodes: ImmutableArray<string>.Empty,
             ConfiguredClientCertificate: clientCertificateSummary,
             trustContext,
             findings);
@@ -530,6 +560,8 @@ public sealed class TlsProbe : ITlsProbe
             CertificateValidation: CheckOutcome.NotEvaluated,
             connectionSummary,
             Certificate: null,
+            ServerCertificateChain: ImmutableArray<CertificateChainElement>.Empty,
+            ServerChainStatusCodes: ImmutableArray<string>.Empty,
             ConfiguredClientCertificate: clientCertificateSummary,
             trustContext,
             diagnosticFindings);
@@ -572,6 +604,8 @@ public sealed class TlsProbe : ITlsProbe
         TrustContext trustContext,
         ConnectionSummary connection,
         CertificateSummary? serverCertificate,
+        ImmutableArray<CertificateChainElement> certificateChainElements,
+        ImmutableArray<string> serverChainStatusCodes,
         CertificateSummary? configuredClientCertificate,
         CheckOutcome tlsAuthentication,
         CheckOutcome certificateValidation,
@@ -587,6 +621,8 @@ public sealed class TlsProbe : ITlsProbe
             CertificateValidation: certificateValidation,
             Connection: connection,
             Certificate: serverCertificate,
+            ServerCertificateChain: certificateChainElements,
+            ServerChainStatusCodes: serverChainStatusCodes,
             ConfiguredClientCertificate: configuredClientCertificate,
             TrustContext: trustContext,
             Findings: findings);

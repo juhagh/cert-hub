@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -120,6 +121,8 @@ public sealed class DiagnosticEndpointTests
                 CipherSuite: null,
                 ApplicationProtocol: null),
             Certificate: null,
+            ServerCertificateChain: ImmutableArray<CertificateChainElement>.Empty,
+            ServerChainStatusCodes: ImmutableArray<string>.Empty,
             ConfiguredClientCertificate: configuredClientCertificate,
             TrustContext: new TrustContext(
                 Mode: TrustMode.System, 
