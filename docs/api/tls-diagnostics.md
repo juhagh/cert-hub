@@ -56,7 +56,7 @@ After syntax validation, the hostname and port must match one configured allowed
 
 A `200` response means the API returned a diagnostic report. The target may have failed DNS resolution, TCP connection or TLS authentication. Inspect the individual outcomes and findings to determine what happened.
 
-The following example is based on an earlier local-lab run using system trust, updated to show the current response shape (including configured-client and SAN fields). The lab CA is not trusted under that configuration, so certificate validation and TLS authentication fail while certificate evidence remains available:
+The following example is based on an earlier local-lab run using system trust, updated to show the current response shape (including configured-client, SAN and structured-chain fields). The lab CA is not trusted under that configuration, so certificate validation and TLS authentication fail while certificate evidence remains available:
 
 ```json
 {
@@ -80,9 +80,32 @@ The following example is based on an earlier local-lab run using system trust, u
     "notBefore": "2026-10-07T04:38:12+00:00",
     "notAfter": "2027-01-05T04:38:12+00:00",
     "sha256Fingerprint": "80E68459EEE4DC63E177B92F7F45FFA518B3FC9A6F99493FE3EACC29AA65C421",
-    "dnsNames": ["localhost"],
+    "dnsNames": [
+      "localhost"
+    ],
     "ipAddresses": []
   },
+  "serverCertificateChain": [
+    {
+      "certificate": {
+        "subject": "CN=localhost",
+        "issuer": "CN=CertHub Lab Root CA",
+        "notBefore": "2026-10-07T04:38:12+00:00",
+        "notAfter": "2027-01-05T04:38:12+00:00",
+        "sha256Fingerprint": "80E68459EEE4DC63E177B92F7F45FFA518B3FC9A6F99493FE3EACC29AA65C421",
+        "dnsNames": [
+          "localhost"
+        ],
+        "ipAddresses": []
+      },
+      "statusCodes": [
+        "PartialChain"
+      ]
+    }
+  ],
+  "serverChainStatusCodes": [
+    "PartialChain"
+  ],
   "configuredClientCertificate": null,
   "trustContext": {
     "mode": "System",
@@ -106,6 +129,8 @@ The following example is based on an earlier local-lab run using system trust, u
   ]
 }
 ```
+
+The structured chain in this example is illustrative, not captured from the historical run. It shows a leaf-only partial chain; actual chain elements and statuses depend on the platform and available certificates.
 
 Outcomes are serialized as `Passed`, `Failed` or `NotEvaluated`. A later stage is not evaluated when the connection cannot reach it. Certificate-validation evidence can still be available when TLS authentication fails.
 
@@ -140,6 +165,23 @@ DNS values are recorded as returned by the platform parser. The probe does not l
 The arrays describe certificate contents, including when server validation fails. For example, a request for `localhost` can return `dnsNames: ["wrong-host.example"]` alongside `CERT_HOSTNAME_MISMATCH`. The subject CN is not substituted for absent DNS SAN entries. Platform certificate validation remains responsible for acceptance.
 
 IP SAN evidence does not enable IP-literal diagnostic targets; the request contract still accepts hostnames only.
+
+### Server certificate chain evidence
+
+| Property | Contents |
+|---|---|
+| `serverCertificateChain` | Platform-built server chain in leaf-to-root order. Each element contains a `certificate` summary and a `statusCodes` array. An incomplete chain may end before a root is found. |
+| `serverChainStatusCodes` | Overall status codes reported by the platform chain validation. |
+
+Each nested `certificate` uses the same summary shape as the top-level server certificate, including DNS/IP SAN arrays. When a chain is available, its first element describes the server leaf certificate. These fields describe the server chain, independently of any configured client credential.
+
+Status codes are strings from the platform's `X509ChainStatusFlags` values, such as `NotTimeValid` or `PartialChain`. Per-element codes identify errors associated with that certificate; the overall array describes the chain evaluation. Platform-specific status sets can differ. Human-readable supporting details remain in `CERT_CHAIN_INVALID` findings.
+
+For an expired leaf issued by a trusted root, the report can contain `NotTimeValid` on the leaf and in `serverChainStatusCodes`, while the root's status array is empty. The chain and its summaries remain available even though certificate validation and TLS authentication fail.
+
+The chain is captured from the validation callback and copied into report data before the callback returns. It is the chain built by the platform under the configured policy, not an exact record of the certificates transmitted by the server. It may include certificates obtained from local stores or configured custom roots. Automatic issuer-certificate downloads remain disabled.
+
+Both arrays are initialized to `[]` when no chain evidence was captured, including DNS and TCP failures. An empty overall status array does not by itself mean validation passed: no evaluation may have occurred, or another check such as hostname validation may have failed. Read `certificateValidation`, `tlsAuthentication` and findings alongside the chain evidence.
 
 ### Configured client certificate evidence
 
@@ -374,8 +416,10 @@ dotnet test tests/CertHub.IntegrationTests/CertHub.IntegrationTests.csproj
 
 Client credential tests cover invalid configuration, missing private keys and incorrect PFX passwords. Loopback mTLS tests verify successful authentication with protected, empty-password and null-password PFX exports, using the server-observed authenticated fingerprint. Negative tests verify server rejection without a credential and with a presented certificate from another CA; the latter also checks its presented fingerprint. Client-side TLS failure timing is not required to match across platforms.
 
-Configured-credential evidence tests verify all summary fields during successful client authentication, null evidence without a credential, and preservation of loaded metadata when controlled DNS resolution fails. Endpoint tests verify the JSON property name and client metadata independently of a null server certificate.
+Configured-credential evidence tests verify all summary fields during successful client authentication, null evidence without a credential, and preservation of loaded metadata when controlled DNS resolution fails. Endpoint tests verify the JSON property name and client metadata independently of the server certificate summary.
 
 SAN coverage verifies multiple DNS entries and both IPv4 and IPv6 entries, empty collections on a client certificate without a SAN extension, and preserved DNS evidence after hostname mismatch. Endpoint tests verify DNS/IP JSON array values and counts.
+
+Chain evidence tests verify leaf-to-root fingerprints and empty statuses on a successful trusted connection, preserved chain summaries and `NotTimeValid` after expired-leaf rejection, and empty chain collections before TLS on DNS/TCP failure. Endpoint tests verify nested certificate fingerprints, leaf status codes, an empty root status array and overall chain status serialization.
 
 These tests require neither Docker nor changes to the machine's trust store.
