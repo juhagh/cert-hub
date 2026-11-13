@@ -250,6 +250,51 @@ public sealed class TlsProbeTests
     }
     
     [Fact]
+    public async Task ProbeAsync_WhenServerDoesNotOfferAlpn_ReturnsNullApplicationProtocol()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+
+        var certificateFile = Path.GetTempFileName();
+
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(certificateFile, publicCert);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [certificateFile],
+                ApplicationProtocols = ["h2", "http/1.1"]
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+
+            await using TlsTestServer testServer = new TlsTestServer(
+                issuer: issuer);
+            
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Passed, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.Passed, result.CertificateValidation);
+            
+            Assert.Null(result.Connection.ApplicationProtocol);
+        }
+        finally
+        {
+            File.Delete(certificateFile);
+        }
+    }
+    
+    [Fact]
     public async Task ProbeAsync_WithUnrelatedCustomRoot_ReturnsValidationFailure()
     { 
         using var issuer = TlsTestServer.CreateCertificateAuthority();
