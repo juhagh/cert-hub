@@ -20,6 +20,7 @@ Current capabilities include:
 - Structured platform-built server chain evidence: certificate summaries in leaf-to-root order, per-certificate status codes and overall chain status codes, preserved when validation rejects the server.
 - Dedicated `CERT_EXPIRED` and `CERT_NOT_YET_VALID` findings based on the server certificate dates and report evaluation time.
 - Connected IP address, TCP-stage duration and negotiated TLS protocol and cipher suite when authentication succeeds.
+- Optional operator-configured ALPN offers and the negotiated application protocol, such as `h2` or `http/1.1`, after successful TLS authentication. The default offer list is empty.
 - A shared timeout across network diagnostic stages and propagation of caller cancellation. Client credential loading occurs before the timeout starts.
 - HTTP request validation, target-policy enforcement and readable enum values in JSON responses.
 
@@ -56,6 +57,7 @@ The Domain and integration suites cover:
 - Configured client metadata on successful authentication and DNS/TCP failures, preservation on server-certificate and remote client rejection, null evidence without a configured credential, and API serialization independently of the server certificate.
 - Built-chain certificate order and fingerprints on successful authentication, retained chain evidence and `NotTimeValid` statuses after expired-certificate rejection, empty chain evidence on DNS/TCP failure, and nested chain JSON serialization.
 - Multiple DNS, IPv4 and IPv6 SAN entries, empty arrays for absent entry types, preservation of DNS SAN evidence on hostname mismatch, and JSON serialization of DNS/IP arrays.
+- ALPN configuration validation, successful `h2` negotiation, successful TLS without ALPN on either peer, and API serialization of the selected protocol.
 - Successful client authentication using protected and passwordless PFX files, confirmed by the server-observed client certificate fingerprint.
 - Server-side rejection of missing client credentials and of a presented client certificate issued by an untrusted CA.
 
@@ -90,7 +92,7 @@ curl --silent --show-error --include \
 
 The default probe uses system trust, so rejection of the locally issued lab certificate is expected unless its CA is trusted under the configured policy. Allowing a target and trusting its certificate are separate settings.
 
-See the [TLS diagnostics API guide](docs/api/tls-diagnostics.md) for request rules, response examples, allowlist configuration, custom-root trust, client PFX configuration and timeout behaviour.
+See the [TLS diagnostics API guide](docs/api/tls-diagnostics.md) for request rules, response examples, allowlist configuration, custom-root trust, client PFX configuration, ALPN offers and timeout behaviour.
 
 The API currently has no authentication or rate limiting. Its hostname-and-port allowlist does not restrict resolved IP addresses. Public deployment requires further access controls and network-target policy.
 

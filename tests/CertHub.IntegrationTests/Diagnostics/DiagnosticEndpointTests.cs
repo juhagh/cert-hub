@@ -244,4 +244,89 @@ public sealed class DiagnosticEndpointTests
         Assert.Equal(request.Port, factory.Probe.LastRequest?.Port);
         Assert.Equal(1, factory.Probe.CallCount);
     }
+    
+    [Fact]
+    public async Task PostTls_WithSuccessfulReport_SerializesNegotiatedApplicationProtocol()
+    {
+        var now = TimeProvider.System.GetUtcNow();
+        
+        await using var factory = new DiagnosticApiFactory();
+
+        var configuredClientCertificate = new CertificateSummary(
+            Subject: "CN=Configured Test Client",
+            Issuer: "Configured Test Client Issuer",
+            NotBefore: now.AddHours(-1),
+            NotAfter: now.AddHours(1),
+            Sha256Fingerprint: "Configured Test Client Fingerprint",
+            DnsNames: ["client.example.test"],
+            IpAddresses: ["192.0.2.10", "2001:db8::10"]);
+        
+        var leafCertificateSummary = new CertificateSummary(
+            Subject: "CN=Leaf Server Chain",
+            Issuer: "Server Chain Issuer",
+            NotBefore: now.AddHours(-1),
+            NotAfter: now.AddHours(1),
+            Sha256Fingerprint: "Leaf Chain Fingerprint",
+            DnsNames: ["leaf.example.test"],
+            IpAddresses: ["192.0.2.11", "2001:db8::11"]);
+
+        var rootCertificateSummary = leafCertificateSummary with
+        {
+            Subject = "CN=Server Chain",
+            Sha256Fingerprint = "Server Chain Fingerprint",
+            DnsNames = ["server.example.test"],
+            IpAddresses = ["192.0.2.12", "2001:db8::12"]
+        };
+        
+        factory.Probe.ReportToReturn = new TlsDiagnosticReport(
+            Hostname: "allowed.example",
+            Port: 443,
+            DnsResolution: CheckOutcome.Passed,
+            TcpConnection: CheckOutcome.Passed,
+            TlsAuthentication: CheckOutcome.Passed,
+            CertificateValidation: CheckOutcome.Passed,
+            AttemptedAt: now,
+            Connection: new ConnectionSummary(
+                RemoteIpAddress: "192.0.2.1",
+                TcpConnectDuration: TimeSpan.FromMilliseconds(100),
+                TlsProtocol: "Tls12",
+                CipherSuite: "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+                ApplicationProtocol: "h2"),
+            Certificate: leafCertificateSummary,
+            ServerCertificateChain:
+            [
+                new CertificateChainElement(leafCertificateSummary, []),
+                new CertificateChainElement(rootCertificateSummary, [])
+            ],
+            ServerChainStatusCodes: [],
+            ConfiguredClientCertificate: configuredClientCertificate,
+            TrustContext: new TrustContext(
+                Mode: TrustMode.System, 
+                ConfigurationId: "system",
+                RootSha256Fingerprints: [],
+                EvaluationTime: now),
+            Findings: []
+        );
+        
+        var options = new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            AllowAutoRedirect = false
+        };
+        
+        using var client = factory.CreateClient(options);
+    
+        var request = new RunTlsDiagnosticRequest(Hostname: "allowed.example", Port: 443);
+        using var response = await client.PostAsJsonAsync("/diagnostics/tls", request);
+        
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers?.ContentType?.MediaType);
+        
+        string jsonContent = await response.Content.ReadAsStringAsync();
+    
+        using JsonDocument doc = JsonDocument.Parse(jsonContent);
+        
+        Assert.Equal("Passed", doc.RootElement.GetProperty("tlsAuthentication").GetString());
+        Assert.Equal("h2", doc.RootElement.GetProperty("connection").GetProperty("applicationProtocol").GetString());
+    }
 }

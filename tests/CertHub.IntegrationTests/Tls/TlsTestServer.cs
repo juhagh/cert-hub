@@ -14,6 +14,7 @@ public sealed class TlsTestServer : IAsyncDisposable
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _shutdownCts = new CancellationTokenSource();
     private readonly Task _serverTask;
+    private readonly SslApplicationProtocol[]? _applicationProtocols;
     
     public int Port { get; }
 
@@ -35,7 +36,8 @@ public sealed class TlsTestServer : IAsyncDisposable
         DateTimeOffset? certificateNotAfter = null,
         X509Certificate2? clientTrustRoot = null,
         string[]? certificateDnsNames = null,
-        IPAddress[]? certificateIpAddresses = null)
+        IPAddress[]? certificateIpAddresses = null,
+        SslApplicationProtocol[]? applicationProtocols = null)
     {
         if (issuer is null)
         {
@@ -59,6 +61,7 @@ public sealed class TlsTestServer : IAsyncDisposable
         _listener = new TcpListener(localaddr: IPAddress.Loopback, port: 0);
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+        _applicationProtocols = applicationProtocols;
         _serverTask = ServeConnectionAsync(_shutdownCts.Token);
     }
     
@@ -230,7 +233,8 @@ public sealed class TlsTestServer : IAsyncDisposable
         SslServerAuthenticationOptions authenticationOptions = new SslServerAuthenticationOptions
             {
                 ServerCertificate = _certificate,
-                ClientCertificateRequired = _clientTrustRoot is not null
+                ClientCertificateRequired = _clientTrustRoot is not null,
+                ApplicationProtocols = _applicationProtocols?.ToList()
             };
 
         if (_clientTrustRoot is not null)

@@ -134,11 +134,34 @@ The structured chain in this example is illustrative, not captured from the hist
 
 Outcomes are serialized as `Passed`, `Failed` or `NotEvaluated`. A later stage is not evaluated when the connection cannot reach it. Certificate-validation evidence can still be available when TLS authentication fails.
 
-Connection and certificate fields reflect available evidence. The certificate can be `null`; negotiated protocol and cipher suite are populated only after successful TLS authentication. ALPN is not currently configured by the probe, so `applicationProtocol` remains `null`.
+Connection and certificate fields reflect available evidence. The certificate can be `null`; negotiated protocol and cipher suite are populated only after successful TLS authentication. Optional ALPN offers are configured by the operator; `applicationProtocol` records the negotiated value after successful TLS authentication, or remains `null` when none was negotiated. The default offer list is empty, so the historical example above still shows `null`.
 
 A failed address attempt can produce a finding even when a later address connects successfully. In the example, IPv6 failed before IPv4 succeeded. `tcpConnectDuration` measures the TCP stage, including earlier address attempts, rather than only the successful attempt.
 
 Use finding codes for identification and messages for explanatory details. Platform error wording and chain-status details can vary. See the [diagnostic report design](../architecture/diagnostic-report.md) for the report model.
+
+### Negotiated application protocol (ALPN)
+
+Application-Layer Protocol Negotiation (ALPN) lets a client offer application protocols during TLS authentication. The server can select a shared protocol. CertHub records that selection in `connection.applicationProtocol` only after its TLS authentication operation completes successfully.
+
+Illustrative successful connection fragment:
+
+```json
+{
+  "tlsAuthentication": "Passed",
+  "connection": {
+    "remoteIpAddress": "127.0.0.1",
+    "tcpConnectDuration": "00:00:00.0010000",
+    "tlsProtocol": "Tls12",
+    "cipherSuite": "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+    "applicationProtocol": "h2"
+  }
+}
+```
+
+A successful TLS connection can still have `applicationProtocol: null`, including when the client offers no ALPN protocols or the server does not negotiate ALPN. The field also remains null when TLS authentication does not complete successfully; null alone does not identify the cause. Inspect the check outcomes and findings.
+
+Selecting `h2` or `http/1.1` does not mean CertHub sent an HTTP request or verified application behaviour. The probe sends no application data and does not perform an HTTP/2 or HTTP/1.1 exchange. ALPN also does not establish remote acceptance of a client certificate.
 
 ### DNS and IP Subject Alternative Names
 
@@ -322,6 +345,29 @@ Certificate validation remains enforced in both modes. Revocation checking and a
 
 One shared timeout covers the network diagnostic stages. The budget starts after client PFX loading. Synchronous certificate-file loading is not cancellable through this timeout. Timeout outcomes are returned as diagnostic reports. Caller cancellation propagates instead of being converted into a target failure. Configuration errors and unexpected application errors are not diagnostic results; the API does not yet define a dedicated response contract for them.
 
+### Optional ALPN configuration
+
+`TlsProbe:ApplicationProtocols` is an ordered array of protocol identifiers. Its default is `[]`, which offers no application protocols. For example, merge this fragment into the API's operator-controlled configuration:
+
+```json
+{
+  "TlsProbe": {
+    "ApplicationProtocols": ["h2", "http/1.1"]
+  }
+}
+```
+
+The array preserves the client's preference order. The server and platform determine the negotiated result; configuring an offer does not guarantee selection. These options are independent of server trust, client PFX credentials and target allowlisting, and are not request fields.
+
+The application configuration contract requires:
+
+- A non-null array; an empty array is valid.
+- Non-null, nonempty entries that are not whitespace-only.
+- Printable ASCII characters only (character values 32–126), with at most 255 characters per entry.
+- No duplicate entries under ordinal, case-sensitive comparison. For example, `h2` and `H2` are distinct identifiers.
+
+The probe does not trim, lowercase or reorder entries. Printable ASCII is CertHub's configuration restriction; ALPN itself supports opaque byte identifiers more broadly. Invalid settings throw `InvalidOperationException` before networking and are local configuration errors, not target findings. Restart the API after changing the settings. To stop offering ALPN, remove the entries from every configuration source that supplies them, restoring the default empty list.
+
 ### Optional client PFX configuration
 
 Client credentials are separate from server trust and target allowlisting. To check the mTLS lab, the probe must trust the lab server's CA, and the server must trust the CA that issued the supplied client credential.
@@ -421,5 +467,7 @@ Configured-credential evidence tests verify all summary fields during successful
 SAN coverage verifies multiple DNS entries and both IPv4 and IPv6 entries, empty collections on a client certificate without a SAN extension, and preserved DNS evidence after hostname mismatch. Endpoint tests verify DNS/IP JSON array values and counts.
 
 Chain evidence tests verify leaf-to-root fingerprints and empty statuses on a successful trusted connection, preserved chain summaries and `NotTimeValid` after expired-leaf rejection, and empty chain collections before TLS on DNS/TCP failure. Endpoint tests verify nested certificate fingerprints, leaf status codes, an empty root status array and overall chain status serialization.
+
+ALPN tests verify invalid configuration and accepted values, including the 255-character boundary and case-sensitive identifiers. Loopback tests verify `h2` selection when both peers support it, and successful TLS with a null application protocol when either peer does not offer ALPN. A separate successful-report endpoint fixture verifies `connection.applicationProtocol` serialization.
 
 These tests require neither Docker nor changes to the machine's trust store.

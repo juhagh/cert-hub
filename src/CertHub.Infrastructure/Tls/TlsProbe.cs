@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Immutable;
 using System.Net;
 using System.Net.Security;
@@ -207,7 +208,10 @@ public sealed class TlsProbe : ITlsProbe
                 SslClientAuthenticationOptions authenticationOptions = new()
                 {
                     TargetHost = request.Hostname,
-                    ClientCertificates = clientCertificate is not null ? [clientCertificate] : null
+                    ClientCertificates = clientCertificate is not null ? [clientCertificate] : null,
+                    ApplicationProtocols = _options.ApplicationProtocols
+                        .Select(protocol => new SslApplicationProtocol(protocol))
+                        .ToList()
                 };
 
                 X509ChainTrustMode trustMode = _options.TrustMode == TrustMode.System
@@ -338,7 +342,14 @@ public sealed class TlsProbe : ITlsProbe
                     var tlsProtocol = sslStream.SslProtocol.ToString();
                     var cipherSuite = sslStream.NegotiatedCipherSuite.ToString();
 
-                    connectionSummary = connectionSummary with { CipherSuite = cipherSuite, TlsProtocol = tlsProtocol };
+                    connectionSummary = connectionSummary with
+                    {
+                        CipherSuite = cipherSuite, 
+                        TlsProtocol = tlsProtocol,
+                        ApplicationProtocol = sslStream.NegotiatedApplicationProtocol == default
+                            ? null
+                            : sslStream.NegotiatedApplicationProtocol.ToString()
+                    };
                 
                     ImmutableArray<DiagnosticFinding> findings =
                     [
@@ -588,6 +599,33 @@ public sealed class TlsProbe : ITlsProbe
                 if (string.IsNullOrWhiteSpace(path))
                     throw new InvalidOperationException("CustomRoots TrustMode certificate path cannot be empty." );
             }
+        }
+        
+        // ALPN related validation
+        if (_options.ApplicationProtocols is null)
+            throw new InvalidOperationException("ALPN protocol list cannot be null.");
+        
+        foreach (var protocol in _options.ApplicationProtocols)
+        {
+            if (string.IsNullOrWhiteSpace(protocol))
+            {
+                throw new InvalidOperationException("ALPN entry is null, empty or whitespace.");
+            }
+
+            if (protocol.Any(c => c < 32 || c > 126))
+            {
+                throw new InvalidOperationException("ALPN entry must contain printable ASCII characters only.");
+            }
+
+            if (protocol.Length > 255)
+            {
+                throw new InvalidOperationException("ALPN entry cannot exceed 255 characters.");
+            }
+        }
+
+        if (_options.ApplicationProtocols.Distinct(StringComparer.Ordinal).Count() != _options.ApplicationProtocols.Length)
+        {
+            throw new InvalidOperationException("ALPN List contains duplicates.");
         }
         
         // mTLS related validation
