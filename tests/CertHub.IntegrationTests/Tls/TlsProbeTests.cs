@@ -1220,6 +1220,9 @@ public sealed class TlsProbeTests
             Assert.Equal(clientCertificate.NotAfter.ToUniversalTime(), result.ConfiguredClientCertificate.NotAfter.ToUniversalTime());
             
             Assert.Contains(result.Findings, f => f.Code == "DNS_RESOLUTION_FAILED");
+            
+            Assert.Empty(result.ServerCertificateChain);
+            Assert.Empty(result.ServerChainStatusCodes);
         }
         finally
         {
@@ -1278,6 +1281,9 @@ public sealed class TlsProbeTests
             Assert.Equal(clientCertificate.NotAfter.ToUniversalTime(), result.ConfiguredClientCertificate.NotAfter.ToUniversalTime());
             
             Assert.Contains(result.Findings, f => f.Code == "TCP_CONNECTION_FAILED");
+            
+            Assert.Empty(result.ServerCertificateChain);
+            Assert.Empty(result.ServerChainStatusCodes);
         }
         finally
         {
