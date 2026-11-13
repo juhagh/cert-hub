@@ -212,7 +212,11 @@ The [mutual TLS scenario](scenarios/05-mutual-tls.md) enables mandatory client c
 
 Use a complete set from the current C# generator, including `client.pfx`. Earlier generated sets may lack client credentials. The public CA certificate must be readable by the container's non-root user; the current generator sets this permission. Keep private keys and client credentials on the host.
 
-This is a lab capability. CertHub's diagnostic probe does not yet send a client certificate, and successful server validation alone cannot establish that an mTLS server accepted the client.
+CertHub's diagnostic probe can load an optional operator-configured client PFX. Its report identifies the configured credential, but successful client-side TLS authentication alone cannot establish that an mTLS server accepted the client. See the [API guide](../docs/api/tls-diagnostics.md) for client credential configuration and reporting limits.
+
+## 8. Observe ALPN negotiation
+
+The [ALPN scenario](scenarios/06-alpn-negotiation.md) uses the standard server and the API's operator-configured protocol offers. Recorded macOS runs selected `h2` when offering HTTP/2 and HTTP/1.1, selected `http/1.1` when offering only HTTP/1.1, and completed TLS with a null application protocol after restoring the default empty list. CertHub sends no application data to the target; the observations establish TLS-level selection only.
 
 ## Cleanup and regeneration
 
@@ -246,6 +250,7 @@ Regeneration creates a new CA and new certificate fingerprints. Stop the lab bef
 - [03 Hostname mismatch](scenarios/03-hostname-mismatch.md)
 - [04 Expired server certificate and recovery](scenarios/04-expired-server-certificate.md)
 - [05 Mutual TLS](scenarios/05-mutual-tls.md)
+- [06 ALPN negotiation](scenarios/06-alpn-negotiation.md)
 
 Recorded timestamps and fingerprints describe earlier runs and will differ from newly generated material. Use the current generator rather than applying historical certificate dates to a newly generated CA.
 

@@ -107,6 +107,7 @@ A separate Docker-based lab provides controlled scenarios for learning and inves
 - [Hostname mismatch](lab/scenarios/03-hostname-mismatch.md)
 - [Expired server certificate and recovery](lab/scenarios/04-expired-server-certificate.md)
 - [Mutual TLS: missing, trusted and untrusted client certificates](lab/scenarios/05-mutual-tls.md)
+- [ALPN negotiation: HTTP/2, HTTP/1.1 and no offer](lab/scenarios/06-alpn-negotiation.md)
 
 The lab uses a locally generated root CA and server certificate. Generated certificates, private keys and PFX files are excluded from Git and the Docker build context. The server certificate is mounted read-only at runtime, and its password is supplied through the `CERTHUB_LAB_PFX_PASSWORD` environment variable.
 
