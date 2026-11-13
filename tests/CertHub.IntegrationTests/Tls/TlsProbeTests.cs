@@ -274,8 +274,52 @@ public sealed class TlsProbeTests
             var options = Options.Create(localSettings);
             var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
 
+            await using TlsTestServer testServer = new TlsTestServer(issuer: issuer);
+            
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Passed, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.Passed, result.CertificateValidation);
+            
+            Assert.Null(result.Connection.ApplicationProtocol);
+        }
+        finally
+        {
+            File.Delete(certificateFile);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WhenClientDoesNotOfferAlpn_ReturnsNullApplicationProtocol()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+
+        var certificateFile = Path.GetTempFileName();
+
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(certificateFile, publicCert);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [certificateFile]
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+
             await using TlsTestServer testServer = new TlsTestServer(
-                issuer: issuer);
+                issuer: issuer, 
+                applicationProtocols: [SslApplicationProtocol.Http2]);
             
             var request = new TlsProbeRequest("localhost", testServer.Port);
             
