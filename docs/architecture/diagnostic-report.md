@@ -69,7 +69,7 @@ The report contains the following information when available:
 | Connection         | Connected IP, TCP-stage duration, negotiated TLS version and cipher suite. TCP-stage duration includes possible earlier failed address attempts and is currently recorded on TCP success. |
 | Server certificate | Subject, issuer, validity dates, SHA-256 fingerprint, DNS SAN names and IP SAN addresses.                                                                                                                                  |
 | Configured client certificate | Subject, issuer, validity dates, SHA-256 fingerprint and DNS/IP SAN entries from the successfully loaded client credential; null when none is configured. |
-| Certificate chain  | Chain-status details are included in finding messages; there is no structured chain section yet.                                                                                          |
+| Certificate chain  | Platform-built server chain in leaf-to-root order, with a certificate summary and status codes per element, plus overall chain status codes. Human-readable details remain in findings.                                                                                          |
 | Findings           | Stable finding code, readable explanation and supporting details                                                                                                                          |
 | Trust context      | Trust mode, configuration identifier and certificate evaluation time, configured custom-root fingerprints                                                                                 |
 
@@ -90,11 +90,24 @@ Only DNS and IP SAN types are represented in this milestone. An empty pair of ar
 
 SAN extraction describes certificate contents and does not change acceptance. Platform validation still determines hostname matching, trust and usage. DNS SAN evidence remains available when hostname validation rejects the server certificate. IP SAN evidence does not expand the API's hostname-only target contract.
 
+### Server Certificate Chain
+
+`TlsDiagnosticReport.ServerCertificateChain` is an immutable collection of `CertificateChainElement` values in platform-built leaf-to-root order. Each element holds a `CertificateSummary` and an immutable `StatusCodes` collection. An incomplete chain can terminate before reaching a root.
+
+`TlsDiagnosticReport.ServerChainStatusCodes` contains the overall platform chain statuses. Both overall and per-element values are recorded as strings from `X509ChainStatusFlags`; explanatory platform messages remain in `CERT_CHAIN_INVALID` findings. The status sets can vary across platforms.
+
+The probe copies the certificate summaries and statuses during the server validation callback, before callback-owned objects become unavailable. No live platform certificate or chain objects are retained in the domain report. Capturing this evidence does not alter validation or permit an invalid certificate.
+
+The chain reflects the platform's construction under the configured trust policy. It can include locally available certificates or configured custom roots; it is not an exact list of certificates sent by the server. Automatic issuer-certificate downloads remain disabled.
+
+Evidence is retained after certificate rejection and later TLS failure when the callback supplied it. For an expired server leaf under a valid trusted root, `NotTimeValid` can appear on the leaf and in the overall statuses while the root's statuses are empty.
+
+Both report collections are initialized to empty when no chain evidence was captured, including DNS/TCP failures. Empty statuses are not a standalone success indicator: validation might not have run, and chain status does not represent hostname matching. Check outcomes and findings determine how to interpret the evidence.
+
 ### Planned Evidence
 
 Following evidence is planned to be included in future implementations:
 
-- Structured built-chain details
 - ALPN
 
 ## Validation Policy
@@ -146,7 +159,7 @@ Initial finding categories include:
 Incomplete chains and invalid usage currently appear as platform details under CERT_CHAIN_INVALID, rather than dedicated
 codes.
 
-Chain-status errors are retained in CERT_CHAIN_INVALID messages; unexpected implementation errors propagate.
+Chain-status codes are retained in the structured overall and per-element collections, with explanatory details in `CERT_CHAIN_INVALID` messages. Unexpected implementation errors propagate.
 
 A timeout does not prove that the server is down. Findings describe what was observed without asserting an unsupported
 cause.
@@ -185,7 +198,8 @@ The following types are implemented under `CertHub.Domain/Diagnostics/`:
 - `CheckOutcome` — Passed, Failed or NotEvaluated.
 - `DiagnosticFinding` — A finding code, and a message with explanation and supporting details.
 - `CertificateSummary` — Certificate metadata, including immutable DNS/IP SAN collections, reused for the server certificate and configured client credential.
-- `TlsDiagnosticReport` — Target, check outcomes, server and configured client certificate summaries, connection evidence, findings and trust context.
+- `CertificateChainElement` — A certificate summary and immutable platform status-code collection for one built-chain element.
+- `TlsDiagnosticReport` — Target, check outcomes, server and configured client certificate summaries, structured server chain evidence, connection evidence, findings and trust context.
 - `ConnectionSummary`
 - `TrustContext`
 - `TrustMode`

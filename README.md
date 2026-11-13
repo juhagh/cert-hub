@@ -17,6 +17,7 @@ Current capabilities include:
 - Reports distinguishing DNS, TCP, TLS authentication and certificate-validation outcomes.
 - Server-certificate subject, issuer, validity dates, SHA-256 fingerprint and DNS/IP SAN capture, including when validation rejects the certificate.
 - Hostname and certificate-chain validation findings with supporting platform error details.
+- Structured platform-built server chain evidence: certificate summaries in leaf-to-root order, per-certificate status codes and overall chain status codes, preserved when validation rejects the server.
 - Dedicated `CERT_EXPIRED` and `CERT_NOT_YET_VALID` findings based on the server certificate dates and report evaluation time.
 - Connected IP address, TCP-stage duration and negotiated TLS protocol and cipher suite when authentication succeeds.
 - A shared timeout across network diagnostic stages and propagation of caller cancellation. Client credential loading occurs before the timeout starts.
@@ -25,6 +26,8 @@ Current capabilities include:
 The probe sends no HTTP request or other application data to the target. Revocation checking and automatic downloads of missing issuer certificates are disabled for this milestone.
 
 `CertificateValidation` describes the server certificate. `TlsAuthentication: Passed` means the client-side authentication operation completed; it does not confirm that the server accepted a client certificate or granted application access. A configured client credential may not be selected or sent. `configuredClientCertificate` identifies the successfully loaded credential; it provides no evidence of selection, presentation or remote acceptance. It is null when no client credential is configured.
+
+The server chain describes what the platform built under the configured trust policy; it can include locally available certificates and is not an exact record of certificates sent by the server. Empty chain or status arrays must be interpreted alongside the check outcomes.
 
 A diagnostic response can return HTTP `200` while reporting a failed target connection. The status indicates that a report was returned; the report's outcomes describe the target.
 
@@ -51,6 +54,7 @@ The Domain and integration suites cover:
 - Request validation, target policy and HTTP endpoint behaviour.
 - Client credential configuration, rejection of PFX files without a private key and incorrect PFX passwords.
 - Configured client metadata on successful authentication and DNS/TCP failures, preservation on server-certificate and remote client rejection, null evidence without a configured credential, and API serialization independently of the server certificate.
+- Built-chain certificate order and fingerprints on successful authentication, retained chain evidence and `NotTimeValid` statuses after expired-certificate rejection, empty chain evidence on DNS/TCP failure, and nested chain JSON serialization.
 - Multiple DNS, IPv4 and IPv6 SAN entries, empty arrays for absent entry types, preservation of DNS SAN evidence on hostname mismatch, and JSON serialization of DNS/IP arrays.
 - Successful client authentication using protected and passwordless PFX files, confirmed by the server-observed client certificate fingerprint.
 - Server-side rejection of missing client credentials and of a presented client certificate issued by an untrusted CA.

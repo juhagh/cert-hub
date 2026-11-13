@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -105,6 +106,29 @@ public sealed class DiagnosticEndpointTests
             DnsNames: ["client.example.test"],
             IpAddresses: ["192.0.2.10", "2001:db8::10"]);
         
+        var leafCertificateSummary = new CertificateSummary(
+            Subject: "CN=Leaf Server Chain",
+            Issuer: "Server Chain Issuer",
+            NotBefore: now.AddHours(-1),
+            NotAfter: now.AddHours(1),
+            Sha256Fingerprint: "Leaf Chain Fingerprint",
+            DnsNames: ["leaf.example.test"],
+            IpAddresses: ["192.0.2.11", "2001:db8::11"]);
+
+        var rootCertificateSummary = leafCertificateSummary with
+        {
+            Subject = "CN=Server Chain",
+            Sha256Fingerprint = "Server Chain Fingerprint",
+            DnsNames = ["server.example.test"],
+            IpAddresses = ["192.0.2.12", "2001:db8::12"]
+        };
+
+        var leafCertificateChainElement = new CertificateChainElement(
+            Certificate: leafCertificateSummary, StatusCodes: ["NotTimeValid"]);
+        
+        var rootCertificateChainElement = new CertificateChainElement(
+            Certificate: rootCertificateSummary, StatusCodes: []);
+        
         factory.Probe.ReportToReturn = new TlsDiagnosticReport(
             Hostname: "allowed.example",
             Port: 443,
@@ -119,7 +143,9 @@ public sealed class DiagnosticEndpointTests
                 TlsProtocol: null,
                 CipherSuite: null,
                 ApplicationProtocol: null),
-            Certificate: null,
+            Certificate: leafCertificateSummary,
+            ServerCertificateChain: [leafCertificateChainElement, rootCertificateChainElement],
+            ServerChainStatusCodes: ["NotTimeValid"],
             ConfiguredClientCertificate: configuredClientCertificate,
             TrustContext: new TrustContext(
                 Mode: TrustMode.System, 
@@ -172,8 +198,8 @@ public sealed class DiagnosticEndpointTests
             .EnumerateArray()
             .Select(element => element.GetProperty("code").GetString()));
 
-        var serverCertObj = doc.RootElement.GetProperty("certificate").ValueKind;
-        Assert.Equal(JsonValueKind.Null, serverCertObj);
+        var serverCertObj = doc.RootElement.GetProperty("certificate");
+        Assert.Equal(leafCertificateSummary.Sha256Fingerprint, serverCertObj.GetProperty("sha256Fingerprint").GetString());
 
         var clientCertObj = doc.RootElement.GetProperty("configuredClientCertificate");
         Assert.Equal("CN=Configured Test Client", clientCertObj.GetProperty("subject").GetString());
@@ -183,6 +209,30 @@ public sealed class DiagnosticEndpointTests
         var dnsNames = clientCertObj.GetProperty("dnsNames");
         var dnsName = Assert.Single(dnsNames.EnumerateArray());
         Assert.Equal("client.example.test", dnsName.GetString());
+
+        var serverCertificateChain = doc.RootElement.GetProperty("serverCertificateChain");
+        Assert.Equal(2, serverCertificateChain.GetArrayLength());
+        Assert.Equal(leafCertificateSummary.Sha256Fingerprint, serverCertificateChain[0]
+            .GetProperty("certificate")
+            .GetProperty("sha256Fingerprint").GetString());
+        Assert.Equal(rootCertificateSummary.Sha256Fingerprint, serverCertificateChain[1]
+            .GetProperty("certificate")
+            .GetProperty("sha256Fingerprint").GetString());
+        
+        var leafStatusCodes = serverCertificateChain[0]
+            .GetProperty("statusCodes")
+            .EnumerateArray()
+            .Select(code => code.GetString());
+        Assert.Contains("NotTimeValid", leafStatusCodes);
+        
+        Assert.Empty(serverCertificateChain[1]
+            .GetProperty("statusCodes")
+            .EnumerateArray());
+        
+        Assert.Contains("NotTimeValid", doc.RootElement
+            .GetProperty("serverChainStatusCodes")
+            .EnumerateArray()
+            .Select(code => code.GetString()));
         
         var ipAddresses = clientCertObj.GetProperty("ipAddresses");
         string[] expectedIpAddresses = ["192.0.2.10", "2001:db8::10"]; 
