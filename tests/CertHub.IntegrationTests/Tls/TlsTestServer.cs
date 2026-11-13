@@ -15,6 +15,7 @@ public sealed class TlsTestServer : IAsyncDisposable
     private readonly CancellationTokenSource _shutdownCts = new CancellationTokenSource();
     private readonly Task _serverTask;
     private readonly SslApplicationProtocol[]? _applicationProtocols;
+    private readonly bool _allowAuthenticationFailure;
     
     public int Port { get; }
 
@@ -37,7 +38,8 @@ public sealed class TlsTestServer : IAsyncDisposable
         X509Certificate2? clientTrustRoot = null,
         string[]? certificateDnsNames = null,
         IPAddress[]? certificateIpAddresses = null,
-        SslApplicationProtocol[]? applicationProtocols = null)
+        SslApplicationProtocol[]? applicationProtocols = null,
+        bool allowAuthenticationFailure = false)
     {
         if (issuer is null)
         {
@@ -62,6 +64,7 @@ public sealed class TlsTestServer : IAsyncDisposable
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _applicationProtocols = applicationProtocols;
+        _allowAuthenticationFailure = allowAuthenticationFailure;
         _serverTask = ServeConnectionAsync(_shutdownCts.Token);
     }
     
@@ -265,7 +268,10 @@ public sealed class TlsTestServer : IAsyncDisposable
         {
             _clientAuthenticationResult.TrySetResult(false);
         }
-        
+        catch (AuthenticationException) when (_allowAuthenticationFailure)
+        {
+            // This test explicitly permits server-side handshake rejection.
+        }
     }
 
     internal static X509Certificate2 CreateCertificateAuthority()
