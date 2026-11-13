@@ -66,7 +66,7 @@ The report contains the following information when available:
 
 | Section            | Evidence                                                                                                                                                                                  |
 |--------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Connection         | Connected IP, TCP-stage duration, negotiated TLS version and cipher suite. TCP-stage duration includes possible earlier failed address attempts and is currently recorded on TCP success. |
+| Connection         | Connected IP, TCP-stage duration, negotiated TLS version, cipher suite and application protocol when available. TCP-stage duration includes possible earlier failed address attempts and is currently recorded on TCP success. |
 | Server certificate | Subject, issuer, validity dates, SHA-256 fingerprint, DNS SAN names and IP SAN addresses.                                                                                                                                  |
 | Configured client certificate | Subject, issuer, validity dates, SHA-256 fingerprint and DNS/IP SAN entries from the successfully loaded client credential; null when none is configured. |
 | Certificate chain  | Platform-built server chain in leaf-to-root order, with a certificate summary and status codes per element, plus overall chain status codes. Human-readable details remain in findings.                                                                                          |
@@ -104,11 +104,17 @@ Evidence is retained after certificate rejection and later TLS failure when the 
 
 Both report collections are initialized to empty when no chain evidence was captured, including DNS/TCP failures. Empty statuses are not a standalone success indicator: validation might not have run, and chain status does not represent hostname matching. Check outcomes and findings determine how to interpret the evidence.
 
-### Planned Evidence
+### Application Protocol Negotiation
 
-Following evidence is planned to be included in future implementations:
+The operator can configure an ordered `TlsProbeOptions.ApplicationProtocols` array of ALPN identifiers. The default empty array offers no application protocols. Entries are passed to `SslClientAuthenticationOptions.ApplicationProtocols` in their configured order.
 
-- ALPN
+The configuration contract accepts only nonempty, non-whitespace-only printable ASCII identifiers of at most 255 characters. The array and its entries must not be null. Duplicate identifiers are rejected using ordinal, case-sensitive comparison. Values are not trimmed or normalized. These are application configuration rules; ALPN's wire format supports opaque byte identifiers more broadly.
+
+After `AuthenticateAsClientAsync` completes successfully, the probe copies `SslStream.NegotiatedApplicationProtocol` into `ConnectionSummary.ApplicationProtocol`. The default negotiated value becomes null; otherwise the report contains the selected identifier, such as `h2` or `http/1.1`.
+
+Successful TLS does not require ALPN negotiation. If either peer does not offer ALPN, authentication can succeed while this evidence remains null. The field is also null in reports where authentication did not complete successfully. It does not introduce a separate check outcome or establish why a protocol was not selected.
+
+ALPN negotiation occurs within TLS. CertHub sends no application data, so selecting a protocol does not confirm HTTP behaviour, application access or remote client-certificate acceptance. The server and platform determine the negotiated result from the offered protocols; the configured client preference order is not a guarantee of selection.
 
 ## Validation Policy
 
