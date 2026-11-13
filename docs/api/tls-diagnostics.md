@@ -468,6 +468,6 @@ SAN coverage verifies multiple DNS entries and both IPv4 and IPv6 entries, empty
 
 Chain evidence tests verify leaf-to-root fingerprints and empty statuses on a successful trusted connection, preserved chain summaries and `NotTimeValid` after expired-leaf rejection, and empty chain collections before TLS on DNS/TCP failure. Endpoint tests verify nested certificate fingerprints, leaf status codes, an empty root status array and overall chain status serialization.
 
-ALPN tests verify invalid configuration and accepted values, including the 255-character boundary and case-sensitive identifiers. Loopback tests verify `h2` selection when both peers support it, and successful TLS with a null application protocol when either peer does not offer ALPN. A separate successful-report endpoint fixture verifies `connection.applicationProtocol` serialization.
+ALPN tests verify invalid configuration and accepted values, including the 255-character boundary and case-sensitive identifiers. Loopback tests verify `h2` selection when both peers support it, and successful TLS with a null application protocol when either peer does not offer ALPN. A no-overlap test offers `juha` to a server supporting only `h2` and verifies failed TLS authentication, null application-protocol evidence and `TLS_AUTHENTICATION_FAILED`, without relying on certificate-validation timing or platform error text. A separate successful-report endpoint fixture verifies `connection.applicationProtocol` serialization.
 
 These tests require neither Docker nor changes to the machine's trust store.

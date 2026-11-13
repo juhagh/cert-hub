@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Observe the application protocol selected during CertHub's TLS connection to the standard lab server. Compare offers for HTTP/2 and HTTP/1.1, HTTP/1.1 alone, and the default empty offer list.
+Observe the application protocol selected during CertHub's TLS connection to the standard lab server. Compare offers for HTTP/2 and HTTP/1.1, HTTP/1.1 alone, the default empty offer list, and an offer unsupported by the server.
 
 ALPN (Application-Layer Protocol Negotiation) runs within TLS authentication. CertHub records the negotiated identifier but sends no HTTP request or other application data to the lab target.
 
@@ -43,7 +43,11 @@ dotnet run --project src/CertHub.Api/CertHub.Api.csproj --launch-profile https
 Call the API from another terminal:
 
 ```bash
-curl --silent --show-error --noproxy '*'   https://localhost:7297/diagnostics/tls   -H 'Content-Type: application/json'   -d '{"hostname":"localhost","port":8443}'   -w '\nHTTP status: %{http_code}\n'
+curl --silent --show-error --noproxy '*' \
+  https://localhost:7297/diagnostics/tls \
+  -H 'Content-Type: application/json' \
+  -d '{"hostname":"localhost","port":8443}' \
+  -w '\nHTTP status: %{http_code}\n'
 ```
 
 The request body supplies hostname and port only. ALPN settings belong to the operator configuration.
@@ -66,6 +70,26 @@ dotnet user-secrets remove "TlsProbe:ApplicationProtocols:0" --project src/CertH
 With no other sources or array entries supplying protocols, the default is `[]`. Restart the API and repeat the same request.
 
 Successful TLS without ALPN selection is valid for this standard lab configuration. `connection.applicationProtocol` should be null; it does not mean the server negotiated an implicit protocol through ALPN.
+
+## 4. Offer an unsupported protocol
+
+After step 3 has removed the earlier offers, configure a single identifier that the HTTP lab server does not support:
+
+```bash
+dotnet user-secrets set "TlsProbe:ApplicationProtocols:0" "juha" --project src/CertHub.Api
+```
+
+`juha` is a valid identifier under CertHub's configuration rules. It is not one of this server's supported application protocols. Ensure no additional configuration entries offer a shared protocol.
+
+Restart the API and repeat the same diagnostic request. This case tests TLS negotiation failure rather than invalid local configuration.
+
+After recording the result, remove the offer and restart the API:
+
+```bash
+dotnet user-secrets remove "TlsProbe:ApplicationProtocols:0" --project src/CertHub.Api
+```
+
+The recorded workflow restored the default this way after the failure. No additional recovery response was captured.
 
 ## Recorded evidence
 
@@ -94,7 +118,47 @@ The initial IPv6 refusal occurred before successful IPv4 connection. It did not 
 
 A client credential from an earlier mTLS exercise remained configured in these runs. `configuredClientCertificate` identified `CN=CertHub Lab Client`, fingerprint `AB94EF90452BAE944A31B205E5B6530A98A6B1183079DFD2A01E42B9EEB69423`. That field confirms local credential loading, not selection, transmission or server acceptance. The standard lab does not require client authentication. Reproducing this ALPN scenario does not require configuring a client PFX.
 
-These are recorded diagnostic results, not an HTTP/2 or HTTP/1.1 application exchange with the target. The final run restored the default empty ALPN offer list. Freshly generated certificates will have different dates and fingerprints.
+These are recorded diagnostic results, not an HTTP/2 or HTTP/1.1 application exchange with the target. The third successful run restored the default empty ALPN offer list before the later no-overlap check. Freshly generated certificates will have different dates and fingerprints.
+
+### No-overlap failure
+
+A fourth manual request, offering only `juha`, was recorded at `2026-11-13T11:12:55.804508+00:00`. The API returned HTTP `200`, delivering a diagnostic report with these extracted values:
+
+```json
+{
+  "attemptedAt": "2026-11-13T11:12:55.804508+00:00",
+  "dnsResolution": "Passed",
+  "tcpConnection": "Passed",
+  "tlsAuthentication": "Failed",
+  "certificateValidation": "NotEvaluated",
+  "connection": {
+    "remoteIpAddress": "127.0.0.1",
+    "tcpConnectDuration": "00:00:00.0042837",
+    "tlsProtocol": null,
+    "cipherSuite": null,
+    "applicationProtocol": null
+  },
+  "certificate": null,
+  "serverCertificateChain": [],
+  "serverChainStatusCodes": [],
+  "findings": [
+    {
+      "code": "TCP_CONNECTION_FAILED",
+      "message": "::1 - ConnectionRefused: Connection refused"
+    },
+    {
+      "code": "TLS_AUTHENTICATION_FAILED",
+      "message": "Authentication failed, see inner exception."
+    }
+  ]
+}
+```
+
+This is an extract of the recorded response; target, trust-context and configured-client fields are omitted for brevity. The response retained the same custom-root configuration and loaded client-certificate fingerprint recorded above. The loaded client metadata is not evidence that client authentication was reached.
+
+The probe connected over IPv4 but did not reach server-certificate validation in this run. It captured no server certificate or chain, and did not populate negotiated protocol or cipher evidence. Null evidence does not prove that no TLS version was exchanged internally; those report fields are recorded only after successful authentication.
+
+The controlled configuration change and resulting failure are consistent with no shared ALPN protocol. The report's generic exception message does not expose the TLS alert, so it does not independently confirm that `no_application_protocol` was received. HTTP `200` indicates report delivery, not successful target TLS.
 
 ## How protocol selection works
 
@@ -106,13 +170,21 @@ If the client offers ALPN but the server does not negotiate it, TLS may likewise
 
 When an ALPN-enabled server supports none of the client's offered protocols, RFC 7301 section 3.2 requires a fatal `no_application_protocol` alert. The server must not select an unoffered protocol. This is a TLS authentication failure, not a certificate-expiry or trust failure. In CertHub, negotiated application-protocol evidence remains null on authentication failure; whether server-certificate validation was reached depends on where the handshake stopped.
 
-The no-overlap case was not executed in this manual record. Platform exception wording and the exact diagnostic findings must be recorded from an actual run rather than inferred here.
+The recorded no-overlap response above shows the observed macOS behaviour. Other platforms can expose different exception wording or reach certificate validation at a different point. The specification describes the expected alert; the report preserves the evidence actually available.
 
 Reference: [RFC 7301, Protocol Selection](https://www.rfc-editor.org/rfc/rfc7301.html#section-3.2).
 
+## Automated verification
+
+`ProbeAsync_WithNoSharedApplicationProtocol_ReturnsTlsFailure` uses an in-process server supporting only `h2`, while the probe offers only `juha` and trusts the test CA. It verifies successful DNS/TCP stages, failed TLS authentication, a null application protocol and `TLS_AUTHENTICATION_FAILED`. It does not assert certificate-validation timing or platform exception wording.
+
+The test server explicitly permits `AuthenticationException` for this negative case, preventing the expected server-side rejection from resurfacing during disposal. Other tests retain the default behaviour of surfacing unexpected server authentication failures; existing mTLS rejection handling is unchanged.
+
+The reported local integration-suite run passed all 104 tests after this case was added.
+
 ## Cleanup
 
-The commands in step 3 remove the two ALPN entries added by this walkthrough. Remove any additional entries or overrides you supplied elsewhere and restart the API before checking default behaviour. Do not remove unrelated settings merely to clean up this scenario.
+Step 3 removes the original two offers. After the unsupported-protocol check, step 4 removes the temporary `juha` entry. Remove any additional entries or overrides you supplied elsewhere and restart the API before checking default behaviour. Do not remove unrelated settings merely to clean up this scenario.
 
 Stop the API with Ctrl+C. While the lab PFX password is still available, stop the standard server:
 

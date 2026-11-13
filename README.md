@@ -57,7 +57,7 @@ The Domain and integration suites cover:
 - Configured client metadata on successful authentication and DNS/TCP failures, preservation on server-certificate and remote client rejection, null evidence without a configured credential, and API serialization independently of the server certificate.
 - Built-chain certificate order and fingerprints on successful authentication, retained chain evidence and `NotTimeValid` statuses after expired-certificate rejection, empty chain evidence on DNS/TCP failure, and nested chain JSON serialization.
 - Multiple DNS, IPv4 and IPv6 SAN entries, empty arrays for absent entry types, preservation of DNS SAN evidence on hostname mismatch, and JSON serialization of DNS/IP arrays.
-- ALPN configuration validation, successful `h2` negotiation, successful TLS without ALPN on either peer, and API serialization of the selected protocol.
+- ALPN configuration validation, successful `h2` negotiation, successful TLS without ALPN on either peer, TLS failure when offers do not overlap, and API serialization of the selected protocol.
 - Successful client authentication using protected and passwordless PFX files, confirmed by the server-observed client certificate fingerprint.
 - Server-side rejection of missing client credentials and of a presented client certificate issued by an untrusted CA.
 
@@ -107,7 +107,7 @@ A separate Docker-based lab provides controlled scenarios for learning and inves
 - [Hostname mismatch](lab/scenarios/03-hostname-mismatch.md)
 - [Expired server certificate and recovery](lab/scenarios/04-expired-server-certificate.md)
 - [Mutual TLS: missing, trusted and untrusted client certificates](lab/scenarios/05-mutual-tls.md)
-- [ALPN negotiation: HTTP/2, HTTP/1.1 and no offer](lab/scenarios/06-alpn-negotiation.md)
+- [ALPN negotiation: selection, no offer and no shared protocol](lab/scenarios/06-alpn-negotiation.md)
 
 The lab uses a locally generated root CA and server certificate. Generated certificates, private keys and PFX files are excluded from Git and the Docker build context. The server certificate is mounted read-only at runtime, and its password is supplied through the `CERTHUB_LAB_PFX_PASSWORD` environment variable.
 
