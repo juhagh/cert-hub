@@ -1604,6 +1604,54 @@ public sealed class TlsProbeTests
             File.Delete(caPemFile);
         }
     }
+
+    [Fact]
+    public async Task ProbeAsync_WithNoSharedApplicationProtocol_ReturnsTlsFailure()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+
+        var certificateFile = Path.GetTempFileName();
+
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(certificateFile, publicCert);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [certificateFile],
+                ApplicationProtocols = ["juha"]
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+
+            await using TlsTestServer testServer = new TlsTestServer(
+                issuer: issuer,
+                applicationProtocols: [SslApplicationProtocol.Http2],
+                allowAuthenticationFailure: true);
+            
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Failed, result.TlsAuthentication);
+            
+            Assert.Null(result.Connection.ApplicationProtocol);
+            
+            Assert.Contains(result.Findings, f => f.Code == "TLS_AUTHENTICATION_FAILED");
+        }
+        finally
+        {
+            File.Delete(certificateFile);
+        }
+    }
     
     private static int GetUnusedLoopBackPort()
     {
