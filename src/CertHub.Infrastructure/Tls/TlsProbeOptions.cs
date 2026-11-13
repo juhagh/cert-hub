@@ -10,4 +10,5 @@ public sealed class TlsProbeOptions
     public string[] RootCertificatePaths { get; set; } = [];
     public string? ClientCertificatePath { get; set; } = null;
     public string? ClientCertificatePassword { get; set; } = null;
+    public string[] ApplicationProtocols { get; set; } = [];
 }

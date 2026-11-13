@@ -11,6 +11,27 @@ namespace CertHub.IntegrationTests.Tls;
 
 public sealed class TlsProbeTests
 {
+    public static TheoryData<string[]?, string> InvalidApplicationProtocolData => new()
+    {
+        { null, "ALPN protocol list cannot be null." },
+        {[null!], "ALPN entry is null, empty or whitespace."},
+        {[""], "ALPN entry is null, empty or whitespace."},
+        {[" "], "ALPN entry is null, empty or whitespace."},
+        {["h2\n"], "ALPN entry must contain printable ASCII characters only."},
+        {["h\u007F"], "ALPN entry must contain printable ASCII characters only."},
+        {["h\u0080"], "ALPN entry must contain printable ASCII characters only."},
+        {[new string('a', 256)], "ALPN entry cannot exceed 255 characters."},
+        {["h2", "h2"], "ALPN List contains duplicates."}
+    };
+    
+    public static TheoryData<string[]> ValidApplicationProtocolData => new()
+    {
+        { [] },
+        { ["h2", "http/1.1"] },
+        { ["h2", "H2"] },
+        { [new string('a', 255)] }
+    };
+    
     [Fact]
     public async Task ProbeAsync_WithUntrustedServerCertificate_ReturnsValidationFailure()
     {
@@ -336,6 +357,50 @@ public sealed class TlsProbeTests
         Assert.Contains("Timeout", exception.Message);
     }
 
+    [Theory]
+    [MemberData(nameof(InvalidApplicationProtocolData))]
+    public async Task ProbeAsync_WithInvalidApplicationProtocols_ThrowsInvalidOperationException(string[]? protocols, string expectedMessage)
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(10),
+            TrustMode = TrustMode.System,
+            ApplicationProtocols = protocols!
+        };
+
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.ProbeAsync(request));
+
+        Assert.Equal(expectedMessage, exception.Message);
+    }
+    
+    [Theory]
+    [MemberData(nameof(ValidApplicationProtocolData))]
+    public async Task ProbeAsync_WithValidApplicationProtocols_ReturnsDnsFailure(string[] protocols)
+    {
+        var timeProvider = TimeProvider.System;
+        var localSettings = new TlsProbeOptions
+        {
+            Timeout = TimeSpan.FromSeconds(10),
+            TrustMode = TrustMode.System,
+            ApplicationProtocols = protocols
+        };
+
+        var options = Options.Create(localSettings);
+        var sut = new TlsProbe(timeProvider, options, new EmptyHostResolver());
+        
+        var request = new TlsProbeRequest("localhost", 8443);
+        var result = await sut.ProbeAsync(request);
+
+        Assert.Equal(CheckOutcome.Failed, result.DnsResolution);
+        Assert.Contains(result.Findings, finding => finding.Code == "DNS_RESOLUTION_FAILED");
+    }
+    
     [Fact]
     public async Task ProbeAsync_WithUnsupportedTrustMode_ThrowsInvalidOperationException()
     {
