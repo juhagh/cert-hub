@@ -324,7 +324,7 @@ public sealed class TlsProbeTests
             var request = new TlsProbeRequest("localhost", testServer.Port);
             
             var result = await sut.ProbeAsync(request);
-            
+
             Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
             Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
             Assert.Equal(CheckOutcome.Passed, result.TlsAuthentication);
