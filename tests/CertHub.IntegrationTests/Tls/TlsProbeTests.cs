@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -195,6 +196,52 @@ public sealed class TlsProbeTests
             Assert.Contains(issuer.GetCertHashString(HashAlgorithmName.SHA256), result.TrustContext.RootSha256Fingerprints);
             Assert.DoesNotContain(result.Findings, f => f.Code.StartsWith("CERT_"));
             Assert.DoesNotContain(result.Findings, f => f.Code.StartsWith("TLS_"));
+        }
+        finally
+        {
+            File.Delete(certificateFile);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeAsync_WithMatchingApplicationProtocols_ReportsNegotiatedProtocol()
+    {
+        using var issuer = TlsTestServer.CreateCertificateAuthority();
+
+        var certificateFile = Path.GetTempFileName();
+
+        try
+        {
+            string publicCert = issuer.ExportCertificatePem();
+            File.WriteAllText(certificateFile, publicCert);
+            
+            var timeProvider = TimeProvider.System;
+            var localSettings = new TlsProbeOptions
+            {
+                Timeout = TimeSpan.FromSeconds(5),
+                TrustMode = TrustMode.CustomRoots,
+                TrustConfigurationId = "test-root-ca",
+                RootCertificatePaths = [certificateFile],
+                ApplicationProtocols = ["h2", "http/1.1"]
+            };
+
+            var options = Options.Create(localSettings);
+            var sut = new TlsProbe(timeProvider, options, new SystemHostResolver());
+
+            await using TlsTestServer testServer = new TlsTestServer(
+                issuer: issuer, 
+                applicationProtocols: [SslApplicationProtocol.Http2]);
+            
+            var request = new TlsProbeRequest("localhost", testServer.Port);
+            
+            var result = await sut.ProbeAsync(request);
+            
+            Assert.Equal(CheckOutcome.Passed, result.DnsResolution);
+            Assert.Equal(CheckOutcome.Passed, result.TcpConnection);
+            Assert.Equal(CheckOutcome.Passed, result.TlsAuthentication);
+            Assert.Equal(CheckOutcome.Passed, result.CertificateValidation);
+            
+            Assert.Equal("h2", result.Connection.ApplicationProtocol);
         }
         finally
         {
