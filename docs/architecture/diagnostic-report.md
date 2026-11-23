@@ -170,6 +170,18 @@ Chain-status codes are retained in the structured overall and per-element collec
 A timeout does not prove that the server is down. Findings describe what was observed without asserting an unsupported
 cause.
 
+### TLS Authentication Exception Details
+
+The Infrastructure `TlsExceptionFormatter` formats the exception caught by the TLS authentication failure handler. It follows `InnerException` from outermost to innermost, using `TypeName: Message` entries joined with ` --> `. The stable finding code remains `TLS_AUTHENTICATION_FAILED`; only its explanatory message changes.
+
+At most ten exception entries are included, counting the outer exception. When another exception remains, the formatter appends `[Further inner exceptions omitted]` as a final segment. The depth limit does not bound individual message lengths. The helper follows one inner-exception chain and does not flatten aggregate-exception branches.
+
+No stack trace or other exception properties are appended. Original message text is preserved without redaction, normalization or interpretation. Platform messages and exception types are supporting observations, not portable cause codes or proof of a particular TLS alert. No classification is derived by matching their wording.
+
+The helper is internal to Infrastructure; domain findings continue to contain strings rather than platform exception objects. Deterministic tests cover exact formatting and both sides of the depth boundary. A real no-overlap TLS test verifies the formatted exception-type prefix reaches the report.
+
+Caller cancellation retains precedence in the authentication-exception handler. Existing outcomes, certificate evidence, timeout behaviour and other exception handlers are unchanged by this formatting step.
+
 ## Timeout and Cancellation
 
 The diagnostic attempt has a bounded timeout.

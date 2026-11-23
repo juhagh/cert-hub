@@ -17,6 +17,7 @@ Current capabilities include:
 - Reports distinguishing DNS, TCP, TLS authentication and certificate-validation outcomes.
 - Server-certificate subject, issuer, validity dates, SHA-256 fingerprint and DNS/IP SAN capture, including when validation rejects the certificate.
 - Hostname and certificate-chain validation findings with supporting platform error details.
+- TLS authentication failure messages containing exception types and inner-exception messages, limited to ten exceptions with an explicit truncation marker.
 - Structured platform-built server chain evidence: certificate summaries in leaf-to-root order, per-certificate status codes and overall chain status codes, preserved when validation rejects the server.
 - Dedicated `CERT_EXPIRED` and `CERT_NOT_YET_VALID` findings based on the server certificate dates and report evaluation time.
 - Connected IP address, TCP-stage duration and negotiated TLS protocol and cipher suite when authentication succeeds.
@@ -57,6 +58,7 @@ The Domain and integration suites cover:
 - Configured client metadata on successful authentication and DNS/TCP failures, preservation on server-certificate and remote client rejection, null evidence without a configured credential, and API serialization independently of the server certificate.
 - Built-chain certificate order and fingerprints on successful authentication, retained chain evidence and `NotTimeValid` statuses after expired-certificate rejection, empty chain evidence on DNS/TCP failure, and nested chain JSON serialization.
 - Multiple DNS, IPv4 and IPv6 SAN entries, empty arrays for absent entry types, preservation of DNS SAN evidence on hostname mismatch, and JSON serialization of DNS/IP arrays.
+- Exact exception formatting for single and nested failures, the ten-exception boundary and truncation, plus formatter wiring in a real TLS failure report.
 - ALPN configuration validation, successful `h2` negotiation, successful TLS without ALPN on either peer, TLS failure when offers do not overlap, and API serialization of the selected protocol.
 - Successful client authentication using protected and passwordless PFX files, confirmed by the server-observed client certificate fingerprint.
 - Server-side rejection of missing client credentials and of a presented client certificate issued by an untrusted CA.
