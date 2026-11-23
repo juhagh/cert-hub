@@ -402,12 +402,12 @@ public sealed class TlsProbe : ITlsProbe
                 catch (AuthenticationException ex)
                 {
                     ct.ThrowIfCancellationRequested();
-                    // Create authentication failure report
 
+                    // Create authentication failure report
                     ImmutableArray<DiagnosticFinding> findings =
                     [
                         .. connectionFindings, .. certificateFindings,
-                        new DiagnosticFinding("TLS_AUTHENTICATION_FAILED", ex.Message)
+                        new DiagnosticFinding("TLS_AUTHENTICATION_FAILED", TlsExceptionFormatter.Format(ex))
                     ];
                 
                     return CreateTlsReport(
