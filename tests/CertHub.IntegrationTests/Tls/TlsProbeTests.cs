@@ -1645,7 +1645,11 @@ public sealed class TlsProbeTests
             
             Assert.Null(result.Connection.ApplicationProtocol);
             
-            Assert.Contains(result.Findings, f => f.Code == "TLS_AUTHENTICATION_FAILED");
+            var finding = Assert.Single(
+                result.Findings,
+                finding => finding.Code == "TLS_AUTHENTICATION_FAILED");
+
+            Assert.StartsWith("AuthenticationException: ", finding.Message);
         }
         finally
         {

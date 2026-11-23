@@ -154,6 +154,8 @@ A fourth manual request, offering only `juha`, was recorded at `2026-11-13T11:12
 }
 ```
 
+This response was recorded before exception-chain formatting was introduced. Its original message is preserved as historical evidence. Current `TLS_AUTHENTICATION_FAILED` messages include exception type names and available inner-exception messages, with up to ten exception entries and an omission marker for deeper chains. No new manual response was captured for this documentation update. See [TLS authentication failure details](../../docs/api/tls-diagnostics.md#tls-authentication-failure-details).
+
 This is an extract of the recorded response; target, trust-context and configured-client fields are omitted for brevity. The response retained the same custom-root configuration and loaded client-certificate fingerprint recorded above. The loaded client metadata is not evidence that client authentication was reached.
 
 The probe connected over IPv4 but did not reach server-certificate validation in this run. It captured no server certificate or chain, and did not populate negotiated protocol or cipher evidence. Null evidence does not prove that no TLS version was exchanged internally; those report fields are recorded only after successful authentication.
@@ -176,11 +178,11 @@ Reference: [RFC 7301, Protocol Selection](https://www.rfc-editor.org/rfc/rfc7301
 
 ## Automated verification
 
-`ProbeAsync_WithNoSharedApplicationProtocol_ReturnsTlsFailure` uses an in-process server supporting only `h2`, while the probe offers only `juha` and trusts the test CA. It verifies successful DNS/TCP stages, failed TLS authentication, a null application protocol and `TLS_AUTHENTICATION_FAILED`. It does not assert certificate-validation timing or platform exception wording.
+`ProbeAsync_WithNoSharedApplicationProtocol_ReturnsTlsFailure` uses an in-process server supporting only `h2`, while the probe offers only `juha` and trusts the test CA. It verifies successful DNS/TCP stages, failed TLS authentication, a null application protocol and `TLS_AUTHENTICATION_FAILED`. It also requires exactly one authentication-failure finding and checks the `AuthenticationException: ` prefix, verifying formatter wiring. It does not assert certificate-validation timing or platform exception wording.
 
 The test server explicitly permits `AuthenticationException` for this negative case, preventing the expected server-side rejection from resurfacing during disposal. Other tests retain the default behaviour of surfacing unexpected server authentication failures; existing mTLS rejection handling is unchanged.
 
-The reported local integration-suite run passed all 104 tests after this case was added.
+The reported local integration-suite run passed all 104 tests when the no-overlap case was added. A later run passed all 108 tests after adding four formatter tests and the report-prefix assertion. The later run verifies automated behaviour; the manual response above remains the original observation.
 
 ## Cleanup
 

@@ -130,7 +130,7 @@ The following example is based on an earlier local-lab run using system trust, u
 }
 ```
 
-The structured chain in this example is illustrative, not captured from the historical run. It shows a leaf-only partial chain; actual chain elements and statuses depend on the platform and available certificates.
+The structured chain in this example is illustrative, not captured from the historical run. It shows a leaf-only partial chain; actual chain elements and statuses depend on the platform and available certificates. The authentication-failure message retains its historical wording; current reports use the exception-chain format described below.
 
 Outcomes are serialized as `Passed`, `Failed` or `NotEvaluated`. A later stage is not evaluated when the connection cannot reach it. Certificate-validation evidence can still be available when TLS authentication fails.
 
@@ -139,6 +139,26 @@ Connection and certificate fields reflect available evidence. The certificate ca
 A failed address attempt can produce a finding even when a later address connects successfully. In the example, IPv6 failed before IPv4 succeeded. `tcpConnectDuration` measures the TCP stage, including earlier address attempts, rather than only the successful attempt.
 
 Use finding codes for identification and messages for explanatory details. Platform error wording and chain-status details can vary. See the [diagnostic report design](../architecture/diagnostic-report.md) for the report model.
+
+### TLS authentication failure details
+
+The stable finding code remains `TLS_AUTHENTICATION_FAILED`. Its message now records the caught `AuthenticationException` and its `InnerException` chain, from outermost to innermost. Each entry uses the exception's simple type name followed by its message, with entries joined by ` --> `.
+
+Illustrative message built from constructed test exceptions:
+
+```text
+AuthenticationException: TLS failed --> IOException: Connection closed
+```
+
+This is a formatting example, not a recorded TLS alert or platform response. A failure without an inner exception contains one entry.
+
+The formatter includes at most ten exceptions, counting the outer exception. If more remain, it appends ` --> [Further inner exceptions omitted]`. This bounds traversal depth; it does not impose a character limit on individual messages. It follows the single `InnerException` chain rather than expanding every branch of an `AggregateException`.
+
+The formatter adds no stack traces or other exception properties. It preserves the original message text, so it does not redact content already present in those messages. Error wording and inner-exception types depend on the operating system and TLS provider. Use the finding code and outcomes for programmatic decisions; the formatted text supplies supporting details and is not a stable error-classification contract.
+
+For example, a native error message alone does not establish that a specific TLS alert was received or prove the root cause. CertHub does not infer ALPN mismatch or other dedicated causes by parsing these strings.
+
+This format currently applies to `TLS_AUTHENTICATION_FAILED` findings created by the `AuthenticationException` handler. It does not change timeout, cancellation, DNS, TCP or `TLS_CONNECTION_FAILED` handling, or certificate-validation decisions.
 
 ### Negotiated application protocol (ALPN)
 
@@ -469,5 +489,7 @@ SAN coverage verifies multiple DNS entries and both IPv4 and IPv6 entries, empty
 Chain evidence tests verify leaf-to-root fingerprints and empty statuses on a successful trusted connection, preserved chain summaries and `NotTimeValid` after expired-leaf rejection, and empty chain collections before TLS on DNS/TCP failure. Endpoint tests verify nested certificate fingerprints, leaf status codes, an empty root status array and overall chain status serialization.
 
 ALPN tests verify invalid configuration and accepted values, including the 255-character boundary and case-sensitive identifiers. Loopback tests verify `h2` selection when both peers support it, and successful TLS with a null application protocol when either peer does not offer ALPN. A no-overlap test offers `juha` to a server supporting only `h2` and verifies failed TLS authentication, null application-protocol evidence and `TLS_AUTHENTICATION_FAILED`, without relying on certificate-validation timing or platform error text. A separate successful-report endpoint fixture verifies `connection.applicationProtocol` serialization.
+
+Formatter tests use constructed exceptions to verify exact single/nested formatting, inclusion of all ten entries at the depth boundary, and the omission marker when an eleventh exception exists. The no-overlap probe test requires exactly one `TLS_AUTHENTICATION_FAILED` finding and checks its `AuthenticationException: ` prefix without asserting platform-specific message text.
 
 These tests require neither Docker nor changes to the machine's trust store.
