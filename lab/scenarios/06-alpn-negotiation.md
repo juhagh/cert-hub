@@ -89,7 +89,7 @@ After recording the result, remove the offer and restart the API:
 dotnet user-secrets remove "TlsProbe:ApplicationProtocols:0" --project src/CertHub.Api
 ```
 
-The recorded workflow restored the default this way after the failure. No additional recovery response was captured.
+Repeat the diagnostic request after restarting to verify recovery. A failure and recovery pair with exception-chain formatting was recorded on 23 November 2026 below; the earlier 13 November failure did not include a captured recovery response.
 
 ## Recorded evidence
 
@@ -154,13 +154,54 @@ A fourth manual request, offering only `juha`, was recorded at `2026-11-13T11:12
 }
 ```
 
-This response was recorded before exception-chain formatting was introduced. Its original message is preserved as historical evidence. Current `TLS_AUTHENTICATION_FAILED` messages include exception type names and available inner-exception messages, with up to ten exception entries and an omission marker for deeper chains. No new manual response was captured for this documentation update. See [TLS authentication failure details](../../docs/api/tls-diagnostics.md#tls-authentication-failure-details).
+This response was recorded before exception-chain formatting was introduced. Its original message is preserved as historical evidence. Current `TLS_AUTHENTICATION_FAILED` messages include exception type names and available inner-exception messages, with up to ten exception entries and an omission marker for deeper chains. A later manual run with the formatter enabled is recorded in the next section. See [TLS authentication failure details](../../docs/api/tls-diagnostics.md#tls-authentication-failure-details).
 
 This is an extract of the recorded response; target, trust-context and configured-client fields are omitted for brevity. The response retained the same custom-root configuration and loaded client-certificate fingerprint recorded above. The loaded client metadata is not evidence that client authentication was reached.
 
 The probe connected over IPv4 but did not reach server-certificate validation in this run. It captured no server certificate or chain, and did not populate negotiated protocol or cipher evidence. Null evidence does not prove that no TLS version was exchanged internally; those report fields are recorded only after successful authentication.
 
 The controlled configuration change and resulting failure are consistent with no shared ALPN protocol. The report's generic exception message does not expose the TLS alert, so it does not independently confirm that `no_application_protocol` was received. HTTP `200` indicates report delivery, not successful target TLS.
+
+### Exception-chain details and recovery: 23 November 2026
+
+The unsupported offer was repeated against the standard lab using the formatter-enabled API. The operator set `TlsProbe:ApplicationProtocols:0` to `juha`, restarted the API and used the same diagnostic request. After recording the failure, the operator removed that entry, restarted the API and repeated the request to verify recovery.
+
+Both responses returned HTTP `200`. The table records the probe outcomes; timestamps are UTC.
+
+| Evidence | Unsupported offer `juha` | Default empty offer list after recovery |
+|---|---|---|
+| Attempted at | `2026-11-23T07:49:19.412109+00:00` | `2026-11-23T07:52:20.162045+00:00` |
+| DNS resolution | `Passed` | `Passed` |
+| TCP connection | `Passed` | `Passed` |
+| TLS authentication | `Failed` | `Passed` |
+| Certificate validation | `NotEvaluated` | `Passed` |
+| Connected address | `127.0.0.1` | `127.0.0.1` |
+| TCP-stage duration | `00:00:00.0045711` | `00:00:00.0045814` |
+| TLS protocol | null | `Tls12` |
+| Cipher suite | null | `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384` |
+| Application protocol | null | null |
+| Server certificate | null | `CN=localhost`, fingerprint recorded below |
+| Server chain | Empty | Server leaf followed by the lab root |
+| Overall chain statuses | Empty | Empty |
+
+The failed response contained this exact finding:
+
+```json
+{
+  "code": "TLS_AUTHENTICATION_FAILED",
+  "message": "AuthenticationException: Authentication failed, see inner exception. --> SslException: Fatal alert"
+}
+```
+
+The additional `SslException: Fatal alert` segment demonstrates that the API now preserves the inner exception's type and message. It reports a fatal alert but does not identify its numeric code or name. The controlled unsupported offer supports an ALPN-mismatch explanation; this message alone does not independently establish `no_application_protocol`.
+
+The failure occurred before the probe reached server-certificate validation in this run. The response retained null certificate evidence and empty chain arrays. As with the earlier observation, null negotiated fields indicate unavailable report evidence, not a claim that no TLS messages were exchanged.
+
+After removing the unsupported offer, the recovery response contained the valid server certificate with DNS SAN `localhost`, no IP SAN entries, and SHA-256 fingerprint `C4FC2F0146E531CE98A6B6B4C4164D46CE5EFEF9A918438ADB49B52A789C8905`. The leaf and lab root both had empty per-element status arrays. Certificate dates and the root fingerprint matched the earlier evidence above.
+
+Both runs used `CustomRoots` with configuration ID `certhub-lab` and root fingerprint `59F582D34ED85989AFA861D336C80E7292C2E5F0587E4822546E6AB31749D0FC`. Both also retained the loaded client credential identified earlier by fingerprint `AB94EF90452BAE944A31B205E5B6530A98A6B1183079DFD2A01E42B9EEB69423`. Its presence does not establish client-certificate presentation or acceptance.
+
+The initial IPv6 refusal finding remained in both reports. On recovery, it was the only finding: `TLS_AUTHENTICATION_FAILED` was absent. Successful TLS with `applicationProtocol: null` confirmed recovery without negotiating an application protocol. CertHub still sent no HTTP request or other application data to the target.
 
 ## How protocol selection works
 
@@ -172,7 +213,7 @@ If the client offers ALPN but the server does not negotiate it, TLS may likewise
 
 When an ALPN-enabled server supports none of the client's offered protocols, RFC 7301 section 3.2 requires a fatal `no_application_protocol` alert. The server must not select an unoffered protocol. This is a TLS authentication failure, not a certificate-expiry or trust failure. In CertHub, negotiated application-protocol evidence remains null on authentication failure; whether server-certificate validation was reached depends on where the handshake stopped.
 
-The recorded no-overlap response above shows the observed macOS behaviour. Other platforms can expose different exception wording or reach certificate validation at a different point. The specification describes the expected alert; the report preserves the evidence actually available.
+The recorded no-overlap responses above show the observed macOS behaviour. Other platforms can expose different exception wording or reach certificate validation at a different point. The specification describes the expected alert; the report preserves the evidence actually available.
 
 Reference: [RFC 7301, Protocol Selection](https://www.rfc-editor.org/rfc/rfc7301.html#section-3.2).
 
@@ -182,7 +223,7 @@ Reference: [RFC 7301, Protocol Selection](https://www.rfc-editor.org/rfc/rfc7301
 
 The test server explicitly permits `AuthenticationException` for this negative case, preventing the expected server-side rejection from resurfacing during disposal. Other tests retain the default behaviour of surfacing unexpected server authentication failures; existing mTLS rejection handling is unchanged.
 
-The reported local integration-suite run passed all 104 tests when the no-overlap case was added. A later run passed all 108 tests after adding four formatter tests and the report-prefix assertion. The later run verifies automated behaviour; the manual response above remains the original observation.
+The reported local integration-suite run passed all 104 tests when the no-overlap case was added. A later run passed all 108 tests after adding four formatter tests and the report-prefix assertion. These counts describe the recorded automated runs. The manual evidence separately preserves the original 13 November response and the formatter-enabled failure/recovery pair from 23 November.
 
 ## Cleanup
 
